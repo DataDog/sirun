@@ -17,6 +17,7 @@ use std::{
     fs::read_to_string,
     io::Result,
     mem,
+    process::exit,
 };
 
 async fn statsd_listener(barrier: Arc<Barrier>, statsd_buf: Arc<RwLock<String>>) -> Result<String> {
@@ -130,7 +131,7 @@ async fn run_setup(setup: &Vec<String>) {
     while code != 0 {
         if attempts == 100 {
             eprintln!("setup script did not complete successfully. aborting.");
-            std::process::exit(1);
+            exit(1);
         }
         let command = setup[0].clone();
         let args = setup.iter().skip(1);
@@ -161,7 +162,7 @@ async fn run_setup(setup: &Vec<String>) {
 async fn test_timeout(timeout: u64) {
     task::sleep(std::time::Duration::from_secs(timeout)).await;
     eprintln!("Timeout of {} seconds exceeded.", timeout);
-    std::process::exit(1);
+    exit(1);
 }
 
 #[async_std::main]
@@ -169,7 +170,7 @@ async fn main() {
     let config = get_config(env::args().nth(1).unwrap());
     if config.is_err() {
         eprintln!("{}", config.err().unwrap());
-        std::process::exit(1);
+        exit(1);
     }
     let config = config.unwrap();
     if let Some(setup) = config.setup {
@@ -189,7 +190,16 @@ async fn main() {
 
     let command = config.run[0].clone();
     let args = config.run.iter().skip(1);
-    Command::new(command).args(args).status().await.unwrap();
+    let status = Command::new(command).args(args).status().await;
+    if let Err(err) = status {
+        eprintln!("Error running test: {}", err);
+        exit(1);
+    }
+    let status = status.unwrap().code().unwrap();
+    if status != 0 {
+        eprintln!("Test exited with code {}, so aborting test.", status);
+        exit(status);
+    }
 
     let mut metrics = HashMap::new();
     if let Ok(hash) = env::var("GIT_COMMIT_HASH") {
@@ -202,5 +212,5 @@ async fn main() {
     get_statsd_metrics(&mut metrics, statsd_buf.read().await.clone());
 
     println!("results: {:?}", metrics);
-    std::process::exit(0);
+    exit(0);
 }
