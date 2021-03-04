@@ -64,49 +64,50 @@ struct Config {
     timeout: Option<u64>,
 }
 
-fn get_config(filename: String) -> std::result::Result<Config, String> {
-    let json_str = read_to_string(filename);
-    if let Err(err) = json_str {
-        return Err(format!("{}", err));
-    }
-    let json_str = json_str.unwrap();
-    let config_val = from_str(&json_str);
-    if let Err(err) = config_val {
-        return Err(format!("{}", err));
-    }
-    let config_val: Value = config_val.unwrap();
-    let config_val = config_val.as_object();
-    if config_val.is_none() {
-        return Err("invalid json".into());
-    }
-    let config_val = config_val.unwrap();
-
-    if !config_val.contains_key("run") {
-        return Err("json must contain key 'run'".into());
-    }
-    let run = config_val.get("run").unwrap();
+fn get_shell_command(
+    obj: &serde_json::Map<String, Value>,
+    name: &str,
+) -> std::result::Result<Vec<String>, String> {
+    let run = obj.get(name).unwrap();
     if !run.is_string() {
-        return Err("'run' must be a string".into());
+        return Err(format!("'{}' must be a string", name).into());
     }
     let run = run.as_str().unwrap();
     let run = shlex::split(run);
     if run.is_none() {
-        return Err("'run' must be a properly formed shell command".into());
+        return Err(format!("'{}' must be a properly formed shell command", name).into());
     }
-    let run = run.unwrap();
+    Ok(run.unwrap())
+}
+
+fn get_config(filename: String) -> std::result::Result<Config, String> {
+    let json_str = match read_to_string(filename) {
+        Ok(json_str) => json_str,
+        Err(err) => return Err(format!("{}", err)),
+    };
+    let config_val: Value = match from_str(&json_str) {
+        Ok(config_val) => config_val,
+        Err(err) => return Err(format!("{}", err)),
+    };
+    let config_val = match config_val.as_object() {
+        Some(config_val) => config_val,
+        None => return Err("invalid json".into()),
+    };
+
+    if !config_val.contains_key("run") {
+        return Err("json must contain key 'run'".into());
+    }
+    let run = match get_shell_command(&config_val, "run") {
+        Ok(run) => run,
+        Err(err) => return Err(err),
+    };
 
     let mut setup = None;
     if config_val.contains_key("setup") {
-        let setup_val = config_val.get("setup").unwrap();
-        if !setup_val.is_string() {
-            return Err("'setup' must be a string".into());
-        }
-        let setup_val = setup_val.as_str().unwrap();
-        let setup_val = shlex::split(setup_val);
-        if setup_val.is_none() {
-            return Err("'setup' must be a properly formed shell command".into());
-        }
-        setup = setup_val;
+        setup = match get_shell_command(&config_val, "setup") {
+            Ok(setup) => Some(setup),
+            Err(err) => return Err(err),
+        };
     }
 
     let mut timeout = None;
