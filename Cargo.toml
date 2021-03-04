@@ -8,6 +8,7 @@ edition = "2018"
 lto = true
 
 [dependencies]
-futures = "0.3.13"
 async-std = { version = "1.9.0", features = ["unstable", "attributes"] }
-libc = "0.2.87"
+serde_json = "1.0.64"
+shlex = "1.0.0"
+nix = "0.20.0"

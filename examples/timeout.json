@@ -1,0 +1,4 @@
+{
+  "run": "sleep 5",
+  "timeout": 2
+}
