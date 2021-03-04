@@ -60,6 +60,7 @@ fn get_kernel_metrics(metrics: &mut HashMap<String, String>) {
 struct Config {
     setup: Option<Vec<String>>,
     run: Vec<String>,
+    timeout: Option<u64>,
 }
 
 fn get_config(filename: String) -> std::result::Result<Config, String> {
@@ -107,7 +108,20 @@ fn get_config(filename: String) -> std::result::Result<Config, String> {
         setup = setup_val;
     }
 
-    Ok(Config { setup, run })
+    let mut timeout = None;
+    if config_val.contains_key("timeout") {
+        let timeout_val = config_val.get("timeout").unwrap();
+        if !timeout_val.is_u64() {
+            return Err("'timeout' must be a positive integer".into());
+        }
+        timeout = timeout_val.as_u64();
+    }
+
+    Ok(Config {
+        setup,
+        run,
+        timeout,
+    })
 }
 
 async fn run_setup(setup: &Vec<String>) {
@@ -144,8 +158,14 @@ async fn run_setup(setup: &Vec<String>) {
     // This process stops running past here.
 }
 
+async fn test_timeout(timeout: u64) {
+    task::sleep(std::time::Duration::from_secs(timeout)).await;
+    eprintln!("Timeout of {} seconds exceeded.", timeout);
+    std::process::exit(1);
+}
+
 #[async_std::main]
-async fn main() -> Result<()> {
+async fn main() {
     let config = get_config(env::args().nth(1).unwrap());
     if config.is_err() {
         eprintln!("{}", config.err().unwrap());
@@ -163,6 +183,10 @@ async fn main() -> Result<()> {
 
     statsd_started.wait().await; // waits for socket to be listening
 
+    if let Some(timeout) = config.timeout {
+        task::spawn(test_timeout(timeout));
+    }
+
     let command = config.run[0].clone();
     let args = config.run.iter().skip(1);
     Command::new(command).args(args).status().await.unwrap();
@@ -178,6 +202,5 @@ async fn main() -> Result<()> {
     get_statsd_metrics(&mut metrics, statsd_buf.read().await.clone());
 
     println!("results: {:?}", metrics);
-
-    Ok(())
+    std::process::exit(0);
 }
