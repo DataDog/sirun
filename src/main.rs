@@ -74,10 +74,11 @@ fn get_shell_command(
     }
     let run = run.as_str().unwrap();
     let run = shlex::split(run);
-    if run.is_none() {
-        return Err(format!("'{}' must be a properly formed shell command", name).into());
+    if let Some(run) = run {
+        Ok(run)
+    } else {
+        Err(format!("'{}' must be a properly formed shell command", name).into())
     }
-    Ok(run.unwrap())
 }
 
 fn get_config(filename: String) -> std::result::Result<Config, String> {
@@ -111,8 +112,7 @@ fn get_config(filename: String) -> std::result::Result<Config, String> {
     }
 
     let mut timeout = None;
-    if config_val.contains_key("timeout") {
-        let timeout_val = config_val.get("timeout").unwrap();
+    if Some(timeout_val) = config_val.get("timeout") {
         if !timeout_val.is_u64() {
             return Err("'timeout' must be a positive integer".into());
         }
