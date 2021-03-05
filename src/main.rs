@@ -103,7 +103,7 @@ async fn test_timeout(timeout: u64) {
 async fn main() {
     let config = get_config(env::args().nth(1).unwrap());
     if config.is_err() {
-        eprintln!("{}", config.err().unwrap());
+        eprintln!("{:?}", config.err().unwrap());
         exit(1);
     }
     let config = config.unwrap();
