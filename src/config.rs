@@ -1,18 +1,20 @@
 use serde_json::{from_str, Value};
 use shlex;
 use std::convert::{TryFrom, TryInto};
-use std::{env, fs::read_to_string};
+use std::{collections::HashMap, env, fs::read_to_string};
 
 pub(crate) struct Config {
     pub(crate) setup: Option<Vec<String>>,
     pub(crate) run: Vec<String>,
     pub(crate) timeout: Option<u64>,
+    pub(crate) env: HashMap<String, String>,
 }
 
 struct ProtoConfig {
     setup: Option<Vec<String>>,
     run: Option<Vec<String>>,
     timeout: Option<u64>,
+    env: HashMap<String, String>,
 }
 
 #[derive(Debug, Clone)]
@@ -29,6 +31,7 @@ impl TryFrom<ProtoConfig> for Config {
                 None => return Err("'run' must be provided".into()),
             },
             timeout: config.timeout,
+            env: config.env,
         })
     }
 }
@@ -82,6 +85,15 @@ fn get_shell_command(
     shlex::split(run).ok_or(format!("'{}' must be a properly formed shell command", name).into())
 }
 
+fn get_env(env: &mut HashMap<String, String>, config_env: &Value) -> Result<(), ConfigError> {
+    let config_env = config_env.as_object().ok_or("env must be an object")?;
+    for (name, value) in config_env.iter() {
+        let value = value.as_str().ok_or("env vars must be strings")?;
+        env.insert(name.clone(), value.to_owned());
+    }
+    Ok(())
+}
+
 fn apply_config(config: &mut ProtoConfig, config_val: &Value) -> Result<(), ConfigError> {
     let config_val = config_val.as_object().ok_or("invalid json")?;
 
@@ -100,6 +112,10 @@ fn apply_config(config: &mut ProtoConfig, config_val: &Value) -> Result<(), Conf
                 .ok_or("'timeout' must be a positive integer")?,
         );
     }
+
+    if let Some(env) = config_val.get("env") {
+        get_env(&mut config.env, &env)?;
+    }
     Ok(())
 }
 
@@ -108,6 +124,7 @@ pub(crate) fn get_config(filename: String) -> Result<Config, ConfigError> {
         setup: None,
         run: None,
         timeout: None,
+        env: HashMap::new(),
     };
     let json_str = read_to_string(filename)?;
     let config_val: Value = from_str(&json_str)?;
