@@ -1,4 +1,4 @@
 {
-  "run": "sleep 5",
-  "timeout": 2
+  "run": "sleep 2",
+  "timeout": 1
 }
