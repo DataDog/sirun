@@ -59,7 +59,7 @@ fn get_kernel_metrics(metrics: &mut HashMap<String, String>) {
     metrics.insert("system.time".into(), format!("{}", data.ru_stime.tv_usec));
 }
 
-async fn run_setup(setup: &Vec<String>) {
+async fn run_setup(setup: &Vec<String>, env: &HashMap<String, String>) {
     let mut code: i32 = 1;
     let mut attempts: u8 = 0;
     while code != 0 {
@@ -71,6 +71,7 @@ async fn run_setup(setup: &Vec<String>) {
         let args = setup.iter().skip(1);
         code = Command::new(command)
             .args(args)
+            .envs(env.clone())
             .status()
             .await
             .unwrap()
@@ -109,7 +110,7 @@ async fn main() {
     let config = config.unwrap();
     if let Some(setup) = config.setup {
         if env::var("SIRUN_SKIP_SETUP").is_err() {
-            run_setup(&setup).await;
+            run_setup(&setup, &config.env).await;
         }
     }
     let statsd_started = Arc::new(Barrier::new(2));
@@ -124,7 +125,11 @@ async fn main() {
 
     let command = config.run[0].clone();
     let args = config.run.iter().skip(1);
-    let status = Command::new(command).args(args).status().await;
+    let status = Command::new(command)
+        .args(args)
+        .envs(&config.env)
+        .status()
+        .await;
     if let Err(err) = status {
         eprintln!("Error running test: {}", err);
         exit(1);
