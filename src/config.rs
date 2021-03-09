@@ -1,5 +1,4 @@
 use serde_json::{from_str, Value};
-use shlex;
 use std::convert::{TryFrom, TryInto};
 use std::{collections::HashMap, env, fs::read_to_string};
 
@@ -82,7 +81,8 @@ fn get_shell_command(
         .as_str()
         .ok_or(format!("'{}' must be a string", name))?;
 
-    shlex::split(run).ok_or(format!("'{}' must be a properly formed shell command", name).into())
+    shlex::split(run)
+        .ok_or_else(|| format!("'{}' must be a properly formed shell command", name).into())
 }
 
 fn get_env(env: &mut HashMap<String, String>, config_env: &Value) -> Result<(), ConfigError> {

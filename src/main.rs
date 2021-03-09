@@ -37,11 +37,11 @@ async fn statsd_listener(barrier: Arc<Barrier>, statsd_buf: Arc<RwLock<String>>)
 fn get_statsd_metrics(metrics: &mut HashMap<String, String>, udp_data: String) {
     let lines = udp_data.trim().lines();
     for line in lines {
-        let metric = line.split("|").nth(0);
+        let metric = line.split('|').next();
         if metric.is_none() {
             continue;
         }
-        let metric: Vec<&str> = metric.unwrap().split(":").collect();
+        let metric: Vec<&str> = metric.unwrap().split(':').collect();
         if metric.len() < 2 {
             continue;
         }
@@ -59,7 +59,7 @@ fn get_kernel_metrics(metrics: &mut HashMap<String, String>) {
     metrics.insert("system.time".into(), format!("{}", data.ru_stime.tv_usec));
 }
 
-async fn run_setup(setup: &Vec<String>, env: &HashMap<String, String>) {
+async fn run_setup(setup: &[String], env: &HashMap<String, String>) {
     let mut code: i32 = 1;
     let mut attempts: u8 = 0;
     while code != 0 {
@@ -79,7 +79,7 @@ async fn run_setup(setup: &Vec<String>, env: &HashMap<String, String>) {
             .unwrap();
         if code != 0 {
             task::sleep(std::time::Duration::from_secs(1)).await;
-            attempts = attempts + 1;
+            attempts += 1;
         }
     }
 
@@ -142,10 +142,10 @@ async fn main() {
 
     let mut metrics = HashMap::new();
     if let Ok(hash) = env::var("GIT_COMMIT_HASH") {
-        metrics.insert("version".into(), hash.into());
+        metrics.insert("version".into(), hash);
     }
     if let Ok(name) = env::var("SIRUN_NAME") {
-        metrics.insert("name".into(), name.into());
+        metrics.insert("name".into(), name);
     }
     get_kernel_metrics(&mut metrics);
     get_statsd_metrics(&mut metrics, statsd_buf.read().await.clone());
