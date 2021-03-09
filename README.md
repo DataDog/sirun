@@ -13,11 +13,16 @@ certainly use it for long-lived processes, but that's not where it shines.
 
 ## Installation
 
+
+### From releases
+
+[Release bundles](https://github.com/DataDog/sirun/releases) are provided for
+each supported plaform. Extract the binary somewhere and use it.
+
+### From source
+
 Make sure you have [`rustup`](https://rustup.rs/) installed, and use that to
 ensure you have the latest stable Rust toolchain enabled.
-
-> Note: In the future, we'll provide releases and images usable in multi-stage
-Dockerfiles.
 
 #### From a local repo clone
 
