@@ -1,20 +1,32 @@
 on:
-  release:
-    types: [created]
+  push:
+    tags:
+      - v[0-9]+.*
 
 jobs:
-  release:
-    name: release ${{ matrix.target }}
+  create-release:
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        target: [x86_64-unknown-linux-musl, x86_64-unknown-linux-gnu, x86_64-apple-darwin]
     steps:
-      - uses: actions/checkout@master
-      - name: Compile and release
-        uses: Douile/rust-build.action@v0.1.26
+      - uses: actions/checkout@v2
+      - uses: taiki-e/create-gh-release-action@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          RUSTTARGET: ${{ matrix.target }}
-          EXTRA_FILES: "README.md"
+  upload-assets:
+    strategy:
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+          - target: x86_64-apple-darwin
+            os: macos-latest
+          - target: x86_64-unknown-linux-musl
+    runs-on: ${{ matrix.os || 'ubuntu-latest'}}
+    steps:
+      - uses: actions/checkout@v2
+      - uses: taiki-e/upload-rust-binary-action@v1
+        with:
+          bin: sirun
+          target: ${{ matrix.target }}
+          archive: $bin-$tag-$target
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CARGO_PROFILE_RELEASE_LTO: true
