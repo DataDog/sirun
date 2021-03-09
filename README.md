@@ -1,10 +1,11 @@
-# sirun
+# sirun 🚨
 
-`sirun` is a tool for taking basic perfomance measurements of a process covering
-its entire lifetime. It gets memory and timing information from the kernel and
-also allows [Statsd](https://github.com/statsd/statsd#usage) messages to be sent
-to `udp://localhost:8125` (in the future this will be configurable), and those
-will be included in the outputted metrics.
+`sirun` (pronounced like "siren") is a tool for taking basic perfomance
+measurements of a process covering its entire lifetime. It gets memory and
+timing information from the kernel and also allows
+[Statsd](https://github.com/statsd/statsd#usage) messages to be sent to
+`udp://localhost:8125` (in the future this will be configurable), and those will
+be included in the outputted metrics.
 
 It's intended that this tool be used for shorter-running benchmarks, and not for
 long-lived processes that don't die without external interaction. You could
