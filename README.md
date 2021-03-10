@@ -86,3 +86,12 @@ This will output something like the following.
   0     0    0     0    0     0      0      0 --:--:-- --:--:-- --:--:--     0
 results: {"version": "123abc", "name": "test_some_stuff", "user.time": "6389", "system.time": "8737", "udp.data": "50", "max.res.size": "2240512"}
 ```
+
+## License
+
+Licensed under either of
+
+ * Apache License, Version 2.0 ([LICENSE-APACHE](LICENSE-APACHE) or http://www.apache.org/licenses/LICENSE-2.0)
+ * MIT license ([LICENSE-MIT](LICENSE-MIT) or http://opensource.org/licenses/MIT)
+
+at your option.
