@@ -3,7 +3,8 @@
 //
 // This product includes software developed at Datadog (https://www.datadoghq.com/). Copyright 2021 Datadog, Inc.
 
-use serde_json::{from_str, Value};
+use lazy_static::lazy_static;
+use serde_yaml::{from_str, Error, Mapping, Value};
 use std::convert::{TryFrom, TryInto};
 use std::{collections::HashMap, env, fs::read_to_string};
 
@@ -64,8 +65,8 @@ impl From<std::env::VarError> for ConfigError {
     }
 }
 
-impl From<serde_json::Error> for ConfigError {
-    fn from(err: serde_json::Error) -> Self {
+impl From<Error> for ConfigError {
+    fn from(err: Error) -> Self {
         format!("{}", err).into()
     }
 }
@@ -76,41 +77,50 @@ macro_rules! errify {
     };
 }
 
-fn get_shell_command(
-    obj: &serde_json::Map<String, Value>,
-    name: &str,
-) -> Result<Vec<String>, ConfigError> {
+fn get_shell_command(obj: &Mapping, name: &Value) -> Result<Vec<String>, ConfigError> {
     let run = obj
         .get(name)
         .unwrap()
         .as_str()
-        .ok_or(format!("'{}' must be a string", name))?;
+        .ok_or(format!("'{}' must be a string", name.as_str().unwrap()))?;
 
-    shlex::split(run)
-        .ok_or_else(|| format!("'{}' must be a properly formed shell command", name).into())
+    shlex::split(run).ok_or_else(|| {
+        format!(
+            "'{}' must be a properly formed shell command",
+            name.as_str().unwrap()
+        )
+        .into()
+    })
 }
 
 fn get_env(env: &mut HashMap<String, String>, config_env: &Value) -> Result<(), ConfigError> {
-    let config_env = config_env.as_object().ok_or("env must be an object")?;
+    let config_env = config_env.as_mapping().ok_or("env must be an object")?;
     for (name, value) in config_env.iter() {
         let value = value.as_str().ok_or("env vars must be strings")?;
-        env.insert(name.clone(), value.to_owned());
+        let name = name.as_str().ok_or("env var names must be strings")?;
+        env.insert(name.to_owned(), value.to_owned());
     }
     Ok(())
 }
 
+lazy_static! {
+    static ref RUN: Value = "run".into();
+    static ref SETUP: Value = "setup".into();
+    static ref TIMEOUT: Value = "timeout".into();
+}
+
 fn apply_config(config: &mut ProtoConfig, config_val: &Value) -> Result<(), ConfigError> {
-    let config_val = config_val.as_object().ok_or("invalid json")?;
+    let config_val = config_val.as_mapping().ok_or("invalid json")?;
 
-    if config_val.contains_key("run") {
-        config.run = Some(get_shell_command(&config_val, "run")?);
+    if config_val.contains_key(&RUN) {
+        config.run = Some(get_shell_command(config_val, &RUN)?);
     }
 
-    if config_val.contains_key("setup") {
-        config.setup = Some(get_shell_command(&config_val, "setup")?);
+    if config_val.contains_key(&SETUP) {
+        config.setup = Some(get_shell_command(config_val, &SETUP)?);
     }
 
-    if let Some(timeout_val) = config_val.get("timeout") {
+    if let Some(timeout_val) = config_val.get(&TIMEOUT) {
         config.timeout = Some(
             timeout_val
                 .as_u64()
@@ -118,7 +128,7 @@ fn apply_config(config: &mut ProtoConfig, config_val: &Value) -> Result<(), Conf
         );
     }
 
-    if let Some(env) = config_val.get("env") {
+    if let Some(env) = config_val.get(&"env".to_owned().into()) {
         get_env(&mut config.env, &env)?;
     }
     Ok(())
@@ -139,14 +149,14 @@ pub(crate) fn get_config(filename: String) -> Result<Config, ConfigError> {
     if let Some(variants) = config_val.get("variants") {
         let variant_key = env::var("SIRUN_VARIANT")?;
         let config_json;
-        if let Some(variants) = variants.as_array() {
-            let variant_key: usize = variant_key.parse().unwrap();
+        if let Some(variants) = variants.as_sequence() {
+            let variant_key = variant_key.parse().unwrap();
             if variants.len() <= variant_key {
                 errify!("variant index {} does not exist in array", variant_key);
             }
             config_json = Some(&variants[variant_key]);
-        } else if let Some(variants) = variants.as_object() {
-            config_json = match variants.get(&variant_key) {
+        } else if let Some(variants) = variants.as_mapping() {
+            config_json = match variants.get(&variant_key.clone().into()) {
                 Some(val) => Some(val),
                 None => errify!("variant key {} does not exist in object", variant_key),
             };
