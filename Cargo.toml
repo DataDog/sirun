@@ -14,6 +14,8 @@ serde_json = "1.0.64"
 shlex = "1.0.0"
 nix = "0.20.0"
 assert_cmd = "1.0.3"
+serde_yaml = "0.8.17"
+lazy_static = "1.4.0"
 
 [dev-dependencies]
 predicates = "1.0.7"

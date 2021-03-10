@@ -15,8 +15,14 @@ macro_rules! run {
 
 #[test]
 #[serial]
-fn simple() {
+fn simple_json() {
     run!("examples/simple.json").assert().success();
+}
+
+#[test]
+#[serial]
+fn simple_yml() {
+    run!("examples/simple.yml").assert().success();
 }
 
 #[test]

@@ -34,7 +34,7 @@ ensure you have the latest stable Rust toolchain enabled.
 
 ## Usage
 
-Create a JSON file with the following properties.
+Create a JSON or YAML file with the following properties.
 
 * **`run`**: The command to run and test. You can format this like a shell
   command with arguments, but note that it will not use a shell as an
