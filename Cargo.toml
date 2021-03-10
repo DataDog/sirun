@@ -3,6 +3,7 @@ name = "sirun"
 version = "0.1.2"
 authors = ["Bryan English <bryan.english@datadoghq.com>"]
 edition = "2018"
+license = "Apache-2.0 OR MIT"
 
 [profile.release]
 lto = true
