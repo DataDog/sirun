@@ -27,10 +27,10 @@ mod config;
 use config::get_config;
 
 async fn statsd_listener(barrier: Arc<Barrier>, statsd_buf: Arc<RwLock<String>>) -> Result<String> {
-    let socket = UdpSocket::bind("127.0.0.1:8124").await;
+    let socket = UdpSocket::bind("127.0.0.1:8125").await;
     let socket = match socket {
         Ok(s) => s,
-        Err(error) => panic!("Cannot bind to 127.0.0.1:8124: {}", error),
+        Err(error) => panic!("Cannot bind to 127.0.0.1:8125: {}", error),
     };
     barrier.wait().await; // indicates to main task that socket is listening
 
