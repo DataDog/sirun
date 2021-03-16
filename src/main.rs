@@ -13,6 +13,7 @@ use nix::{
     libc::{getrusage, RUSAGE_CHILDREN},
     unistd,
 };
+use serde::Serialize;
 use serde_json::json;
 use std::{
     collections::HashMap,
@@ -24,8 +25,33 @@ use std::{
 };
 
 mod config;
-
 use config::get_config;
+
+#[derive(Serialize)]
+#[serde(untagged)]
+enum MetricValue {
+    Str(String),
+    Num(f64),
+}
+
+impl From<String> for MetricValue {
+    fn from(string: String) -> Self {
+        MetricValue::Str(string)
+    }
+}
+
+macro_rules! num_type {
+    ($type:ty) => {
+        impl From<$type> for MetricValue {
+            fn from(num: $type) -> Self {
+                MetricValue::Num(num as f64)
+            }
+        }
+    };
+}
+num_type!(i32);
+num_type!(i64);
+num_type!(f64);
 
 async fn statsd_listener(barrier: Arc<Barrier>, statsd_buf: Arc<RwLock<String>>) -> Result<String> {
     let socket = UdpSocket::bind("127.0.0.1:8125").await;
@@ -44,29 +70,31 @@ async fn statsd_listener(barrier: Arc<Barrier>, statsd_buf: Arc<RwLock<String>>)
     }
 }
 
-fn get_statsd_metrics(metrics: &mut HashMap<String, String>, udp_data: String) {
+fn get_statsd_metrics(metrics: &mut HashMap<String, MetricValue>, udp_data: String) {
     let lines = udp_data.trim().lines();
     for line in lines {
-        let metric = line.split('|').next();
-        if metric.is_none() {
-            continue;
-        }
-        let metric: Vec<&str> = metric.unwrap().split(':').collect();
+        let metric: Vec<&str> = match line.split('|').next() {
+            None => continue,
+            Some(metric) => metric.split(':').collect(),
+        };
         if metric.len() < 2 {
             continue;
         }
-        metrics.insert(metric[0].into(), metric[1].into());
+        metrics.insert(metric[0].into(), metric[1].parse::<f64>().unwrap().into());
     }
 }
 
-fn get_kernel_metrics(metrics: &mut HashMap<String, String>) {
-    let mut data = unsafe { mem::MaybeUninit::uninit().assume_init() };
-    if unsafe { getrusage(RUSAGE_CHILDREN, &mut data) } == -1 {
-        return;
-    }
-    metrics.insert("max.res.size".into(), format!("{}", data.ru_maxrss));
-    metrics.insert("user.time".into(), format!("{}", data.ru_utime.tv_usec));
-    metrics.insert("system.time".into(), format!("{}", data.ru_stime.tv_usec));
+fn get_kernel_metrics(metrics: &mut HashMap<String, MetricValue>) {
+    let data = unsafe {
+        let mut data = mem::MaybeUninit::uninit().assume_init();
+        if getrusage(RUSAGE_CHILDREN, &mut data) == -1 {
+            return;
+        }
+        data
+    };
+    metrics.insert("max.res.size".into(), data.ru_maxrss.into());
+    metrics.insert("user.time".into(), data.ru_utime.tv_usec.into());
+    metrics.insert("system.time".into(), data.ru_stime.tv_usec.into());
 }
 
 async fn run_setup(setup: &[String], env: &HashMap<String, String>) {
@@ -150,12 +178,12 @@ async fn main() {
         exit(status);
     }
 
-    let mut metrics = HashMap::new();
+    let mut metrics: HashMap<String, MetricValue> = HashMap::new();
     if let Ok(hash) = env::var("GIT_COMMIT_HASH") {
-        metrics.insert("version".into(), hash);
+        metrics.insert("version".into(), hash.into());
     }
     if let Ok(name) = env::var("SIRUN_NAME") {
-        metrics.insert("name".into(), name);
+        metrics.insert("name".into(), name.into());
     }
     get_kernel_metrics(&mut metrics);
     get_statsd_metrics(&mut metrics, statsd_buf.read().await.clone());
