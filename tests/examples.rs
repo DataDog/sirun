@@ -95,3 +95,13 @@ fn sigint() {
         .success()
         .stdout(predicate::str::contains("user.time"));
 }
+
+#[test]
+#[serial]
+fn stdio() {
+    run!("./examples/simple.json")
+        .env("SIRUN_NO_STDIO", "1")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("setup was run").not());
+}

@@ -5,7 +5,7 @@
 
 use async_std::{
     net::UdpSocket,
-    process::Command,
+    process::{Command, Stdio},
     sync::{Arc, Barrier, RwLock},
     task::{sleep, spawn},
 };
@@ -98,6 +98,13 @@ fn get_kernel_metrics(metrics: &mut HashMap<String, MetricValue>) {
     metrics.insert("system.time".into(), data.ru_stime.tv_usec.into());
 }
 
+fn get_stdio() -> Stdio {
+    match env::var("SIRUN_NO_STDIO") {
+        Ok(_) => Stdio::null(),
+        Err(_) => Stdio::inherit(),
+    }
+}
+
 async fn run_setup(setup: &[String], env: &HashMap<String, String>) {
     let mut code: i32 = 1;
     let mut attempts: u8 = 0;
@@ -111,6 +118,8 @@ async fn run_setup(setup: &[String], env: &HashMap<String, String>) {
         code = Command::new(command)
             .args(args)
             .envs(env.clone())
+            .stdout(get_stdio())
+            .stderr(get_stdio())
             .status()
             .await
             .unwrap()
@@ -167,6 +176,8 @@ async fn main() {
     let status = Command::new(command)
         .args(args)
         .envs(&config.env)
+        .stdout(get_stdio())
+        .stderr(get_stdio())
         .status()
         .await;
     if let Err(err) = status {
