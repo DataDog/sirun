@@ -7,11 +7,11 @@ use async_std::{
     net::UdpSocket,
     process::Command,
     sync::{Arc, Barrier, RwLock},
-    task,
+    task::{sleep, spawn},
 };
 use nix::{
     libc::{getrusage, RUSAGE_CHILDREN},
-    unistd,
+    unistd::execvp,
 };
 use serde::Serialize;
 use serde_json::json;
@@ -20,8 +20,9 @@ use std::{
     env,
     ffi::{CStr, CString},
     io::Result,
-    mem,
+    mem::MaybeUninit,
     process::exit,
+    time::Duration,
 };
 
 mod config;
@@ -86,7 +87,7 @@ fn get_statsd_metrics(metrics: &mut HashMap<String, MetricValue>, udp_data: Stri
 
 fn get_kernel_metrics(metrics: &mut HashMap<String, MetricValue>) {
     let data = unsafe {
-        let mut data = mem::MaybeUninit::uninit().assume_init();
+        let mut data = MaybeUninit::uninit().assume_init();
         if getrusage(RUSAGE_CHILDREN, &mut data) == -1 {
             return;
         }
@@ -116,7 +117,7 @@ async fn run_setup(setup: &[String], env: &HashMap<String, String>) {
             .code()
             .unwrap();
         if code != 0 {
-            task::sleep(std::time::Duration::from_secs(1)).await;
+            sleep(Duration::from_secs(1)).await;
             attempts += 1;
         }
     }
@@ -128,12 +129,12 @@ async fn run_setup(setup: &[String], env: &HashMap<String, String>) {
         .map(|s| CString::new(s.as_bytes()).unwrap())
         .collect();
     let args: Vec<&CStr> = args.iter().map(|s| s.as_c_str()).collect();
-    let _ = unistd::execvp(CString::new(filename).unwrap().as_c_str(), &args);
+    let _ = execvp(CString::new(filename).unwrap().as_c_str(), &args);
     // This process stops running past here.
 }
 
 async fn test_timeout(timeout: u64) {
-    task::sleep(std::time::Duration::from_secs(timeout)).await;
+    sleep(std::time::Duration::from_secs(timeout)).await;
     eprintln!("Timeout of {} seconds exceeded.", timeout);
     exit(1);
 }
@@ -153,12 +154,12 @@ async fn main() {
     }
     let statsd_started = Arc::new(Barrier::new(2));
     let statsd_buf = Arc::new(RwLock::new(String::new()));
-    task::spawn(statsd_listener(statsd_started.clone(), statsd_buf.clone()));
+    spawn(statsd_listener(statsd_started.clone(), statsd_buf.clone()));
 
     statsd_started.wait().await; // waits for socket to be listening
 
     if let Some(timeout) = config.timeout {
-        task::spawn(test_timeout(timeout));
+        spawn(test_timeout(timeout));
     }
 
     let command = config.run[0].clone();
