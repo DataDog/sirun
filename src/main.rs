@@ -13,6 +13,7 @@ use nix::{
     libc::{getrusage, RUSAGE_CHILDREN},
     unistd,
 };
+use serde_json::json;
 use std::{
     collections::HashMap,
     env,
@@ -159,6 +160,6 @@ async fn main() {
     get_kernel_metrics(&mut metrics);
     get_statsd_metrics(&mut metrics, statsd_buf.read().await.clone());
 
-    println!("results: {:?}", metrics);
+    println!("{}", json!(metrics).to_string());
     exit(0);
 }

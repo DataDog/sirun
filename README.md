@@ -84,7 +84,7 @@ This will output something like the following.
   % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
                                  Dload  Upload   Total   Spent    Left  Speed
   0     0    0     0    0     0      0      0 --:--:-- --:--:-- --:--:--     0
-results: {"version": "123abc", "name": "test_some_stuff", "user.time": "6389", "system.time": "8737", "udp.data": "50", "max.res.size": "2240512"}
+{"version": "123abc", "name": "test_some_stuff", "user.time": "6389", "system.time": "8737", "udp.data": "50", "max.res.size": "2240512"}
 ```
 
 ## License
