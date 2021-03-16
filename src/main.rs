@@ -144,7 +144,7 @@ async fn main() {
         exit(1);
     }
     let status = status.unwrap().code().unwrap();
-    if status != 0 {
+    if status != 0 && status <= 128 {
         eprintln!("Test exited with code {}, so aborting test.", status);
         exit(status);
     }
