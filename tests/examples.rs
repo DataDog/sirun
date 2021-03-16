@@ -86,3 +86,12 @@ fn env() {
         .success()
         .stdout(predicate::str::contains("something one"));
 }
+
+#[test]
+#[serial]
+fn sigint() {
+    run!("./examples/sigint.json")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("user.time"));
+}
