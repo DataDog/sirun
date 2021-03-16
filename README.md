@@ -54,6 +54,7 @@ Create a JSON or YAML file with the following properties.
 * **`GIT_COMMIT_HASH`**: If set, will include a `version` in the
   results.
 * **`SIRUN_NAME`**: If set, will include a `name` in the results.
+* **SIRUN_NO_STDIO**: If set, supresses output from the tested program.
 
 ### Example
 
@@ -84,7 +85,7 @@ This will output something like the following.
   % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
                                  Dload  Upload   Total   Spent    Left  Speed
   0     0    0     0    0     0      0      0 --:--:-- --:--:-- --:--:--     0
-{"version": "123abc", "name": "test_some_stuff", "user.time": "6389", "system.time": "8737", "udp.data": "50", "max.res.size": "2240512"}
+{"version":"123abc","name":"test_some_stuff","user.time":6389.0,"system.time":8737.0,"udp.data":50.0,"max.res.size":2240512.0}
 ```
 
 ## License
