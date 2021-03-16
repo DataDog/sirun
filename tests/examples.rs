@@ -32,7 +32,7 @@ fn simple_name() {
         .env("SIRUN_NAME", "test test")
         .assert()
         .success()
-        .stdout(predicate::str::contains("\"name\": \"test test\""));
+        .stdout(predicate::str::contains("\"name\":\"test test\""));
 }
 
 #[test]
@@ -42,7 +42,7 @@ fn simple_version() {
         .env("GIT_COMMIT_HASH", "123abc")
         .assert()
         .success()
-        .stdout(predicate::str::contains("\"version\": \"123abc\""));
+        .stdout(predicate::str::contains("\"version\":\"123abc\""));
 }
 
 #[test]
