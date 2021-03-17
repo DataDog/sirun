@@ -191,6 +191,35 @@ async fn main() {
     }
 
     let mut metrics: HashMap<String, MetricValue> = HashMap::new();
+
+    if config.cachegrind {
+        let command = "valgrind";
+        let mut args = vec!["--tool=cachegrind".to_owned()];
+        args.append(&mut config.run.clone());
+        let output = Command::new(command)
+            .args(args)
+            .envs(&config.env)
+            .output()
+            .await
+            .unwrap();
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let instructions: f64 = stderr
+            .trim()
+            .lines()
+            .filter(|x| x.contains("I   refs:"))
+            .nth(0)
+            .unwrap()
+            .trim()
+            .split_whitespace()
+            .last()
+            .unwrap()
+            .replace(",", "")
+            .parse()
+            .unwrap();
+        metrics.insert("instructions".into(), instructions.into());
+        eprintln!("got valgrind output: {}", stderr);
+    }
+
     if let Ok(hash) = env::var("GIT_COMMIT_HASH") {
         metrics.insert("version".into(), hash.into());
     }

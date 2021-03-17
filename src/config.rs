@@ -13,6 +13,7 @@ pub(crate) struct Config {
     pub(crate) run: Vec<String>,
     pub(crate) timeout: Option<u64>,
     pub(crate) env: HashMap<String, String>,
+    pub(crate) cachegrind: bool,
 }
 
 struct ProtoConfig {
@@ -20,6 +21,7 @@ struct ProtoConfig {
     run: Option<Vec<String>>,
     timeout: Option<u64>,
     env: HashMap<String, String>,
+    cachegrind: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -37,6 +39,7 @@ impl TryFrom<ProtoConfig> for Config {
             },
             timeout: config.timeout,
             env: config.env,
+            cachegrind: config.cachegrind,
         })
     }
 }
@@ -107,6 +110,7 @@ lazy_static! {
     static ref RUN: Value = "run".into();
     static ref SETUP: Value = "setup".into();
     static ref TIMEOUT: Value = "timeout".into();
+    static ref CACHEGRIND: Value = "cachegrind".into();
 }
 
 fn apply_config(config: &mut ProtoConfig, config_val: &Value) -> Result<(), ConfigError> {
@@ -128,6 +132,12 @@ fn apply_config(config: &mut ProtoConfig, config_val: &Value) -> Result<(), Conf
         );
     }
 
+    if let Some(cachegrind_val) = config_val.get(&CACHEGRIND) {
+        config.cachegrind = cachegrind_val
+            .as_bool()
+            .ok_or("'cachegrind' must be a boolean")?;
+    }
+
     if let Some(env) = config_val.get(&"env".to_owned().into()) {
         get_env(&mut config.env, &env)?;
     }
@@ -140,6 +150,7 @@ pub(crate) fn get_config(filename: String) -> Result<Config, ConfigError> {
         run: None,
         timeout: None,
         env: HashMap::new(),
+        cachegrind: false,
     };
     let json_str = read_to_string(filename)?;
     let config_val: Value = from_str(&json_str)?;
