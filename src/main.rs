@@ -3,6 +3,7 @@
 //
 // This product includes software developed at Datadog (https://www.datadoghq.com/). Copyright 2021 Datadog, Inc.
 
+use anyhow::*;
 use async_std::{
     net::UdpSocket,
     process::{Command, Stdio},
@@ -19,7 +20,6 @@ use std::{
     collections::HashMap,
     env,
     ffi::{CStr, CString},
-    io::Result,
     mem::MaybeUninit,
     process::exit,
     time::Duration,
@@ -71,7 +71,7 @@ async fn statsd_listener(barrier: Arc<Barrier>, statsd_buf: Arc<RwLock<String>>)
     }
 }
 
-fn get_statsd_metrics(metrics: &mut HashMap<String, MetricValue>, udp_data: String) {
+fn get_statsd_metrics(metrics: &mut HashMap<String, MetricValue>, udp_data: String) -> Result<()> {
     let lines = udp_data.trim().lines();
     for line in lines {
         let metric: Vec<&str> = match line.split('|').next() {
@@ -81,8 +81,9 @@ fn get_statsd_metrics(metrics: &mut HashMap<String, MetricValue>, udp_data: Stri
         if metric.len() < 2 {
             continue;
         }
-        metrics.insert(metric[0].into(), metric[1].parse::<f64>().unwrap().into());
+        metrics.insert(metric[0].into(), metric[1].parse::<f64>()?.into());
     }
+    Ok(())
 }
 
 fn get_kernel_metrics(metrics: &mut HashMap<String, MetricValue>) {
@@ -105,7 +106,7 @@ fn get_stdio() -> Stdio {
     }
 }
 
-async fn run_setup(setup: &[String], env: &HashMap<String, String>) {
+async fn run_setup(setup: &[String], env: &HashMap<String, String>) -> Result<()> {
     let mut code: i32 = 1;
     let mut attempts: u8 = 0;
     while code != 0 {
@@ -121,10 +122,9 @@ async fn run_setup(setup: &[String], env: &HashMap<String, String>) {
             .stdout(get_stdio())
             .stderr(get_stdio())
             .status()
-            .await
-            .unwrap()
+            .await?
             .code()
-            .unwrap();
+            .ok_or(anyhow!("no exit code"))?;
         if code != 0 {
             sleep(Duration::from_secs(1)).await;
             attempts += 1;
@@ -140,6 +140,8 @@ async fn run_setup(setup: &[String], env: &HashMap<String, String>) {
     let args: Vec<&CStr> = args.iter().map(|s| s.as_c_str()).collect();
     let _ = execvp(CString::new(filename).unwrap().as_c_str(), &args);
     // This process stops running past here.
+
+    Ok(())
 }
 
 async fn test_timeout(timeout: u64) {
@@ -149,16 +151,11 @@ async fn test_timeout(timeout: u64) {
 }
 
 #[async_std::main]
-async fn main() {
-    let config = get_config(env::args().nth(1).unwrap());
-    if config.is_err() {
-        eprintln!("{:?}", config.err().unwrap());
-        exit(1);
-    }
-    let config = config.unwrap();
+async fn main() -> Result<()> {
+    let config = get_config(env::args().nth(1).unwrap())?;
     if let Some(setup) = config.setup {
         if env::var("SIRUN_SKIP_SETUP").is_err() {
-            run_setup(&setup, &config.env).await;
+            run_setup(&setup, &config.env).await?;
         }
     }
     let statsd_started = Arc::new(Barrier::new(2));
@@ -179,12 +176,8 @@ async fn main() {
         .stdout(get_stdio())
         .stderr(get_stdio())
         .status()
-        .await;
-    if let Err(err) = status {
-        eprintln!("Error running test: {}", err);
-        exit(1);
-    }
-    let status = status.unwrap().code().unwrap();
+        .await?;
+    let status = status.code().ok_or(anyhow!("no exit code"))?;
     if status != 0 && status <= 128 {
         eprintln!("Test exited with code {}, so aborting test.", status);
         exit(status);
@@ -200,24 +193,21 @@ async fn main() {
             .args(args)
             .envs(&config.env)
             .output()
-            .await
-            .unwrap();
+            .await?;
         let stderr = String::from_utf8_lossy(&output.stderr);
         let instructions: f64 = stderr
             .trim()
             .lines()
             .filter(|x| x.contains("I   refs:"))
-            .nth(0)
-            .unwrap()
+            .next()
+            .ok_or(anyhow!("bad cachegrind output"))?
             .trim()
             .split_whitespace()
             .last()
-            .unwrap()
+            .ok_or(anyhow!("bad cachegrind output"))?
             .replace(",", "")
-            .parse()
-            .unwrap();
+            .parse()?;
         metrics.insert("instructions".into(), instructions.into());
-        eprintln!("got valgrind output: {}", stderr);
     }
 
     if let Ok(hash) = env::var("GIT_COMMIT_HASH") {
@@ -227,8 +217,9 @@ async fn main() {
         metrics.insert("name".into(), name.into());
     }
     get_kernel_metrics(&mut metrics);
-    get_statsd_metrics(&mut metrics, statsd_buf.read().await.clone());
+    get_statsd_metrics(&mut metrics, statsd_buf.read().await.clone())?;
 
     println!("{}", json!(metrics).to_string());
-    exit(0);
+
+    Ok(())
 }

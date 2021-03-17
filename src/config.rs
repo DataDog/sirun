@@ -3,8 +3,9 @@
 //
 // This product includes software developed at Datadog (https://www.datadoghq.com/). Copyright 2021 Datadog, Inc.
 
+use anyhow::*;
 use lazy_static::lazy_static;
-use serde_yaml::{from_str, Error, Mapping, Value};
+use serde_yaml::{from_str, Mapping, Value};
 use std::convert::{TryFrom, TryInto};
 use std::{collections::HashMap, env, fs::read_to_string};
 
@@ -24,18 +25,15 @@ struct ProtoConfig {
     cachegrind: bool,
 }
 
-#[derive(Debug, Clone)]
-pub(crate) struct ConfigError(String);
-
 impl TryFrom<ProtoConfig> for Config {
-    type Error = ConfigError;
+    type Error = Error;
 
-    fn try_from(config: ProtoConfig) -> Result<Config, ConfigError> {
+    fn try_from(config: ProtoConfig) -> Result<Config> {
         Ok(Config {
             setup: config.setup,
             run: match config.run {
                 Some(run) => run,
-                None => return Err("'run' must be provided".into()),
+                None => bail!("'run' must be provided"),
             },
             timeout: config.timeout,
             env: config.env,
@@ -44,63 +42,30 @@ impl TryFrom<ProtoConfig> for Config {
     }
 }
 
-impl From<String> for ConfigError {
-    fn from(string: String) -> Self {
-        ConfigError(string)
-    }
-}
-
-impl From<&str> for ConfigError {
-    fn from(string: &str) -> Self {
-        string.to_owned().into()
-    }
-}
-
-impl From<std::io::Error> for ConfigError {
-    fn from(err: std::io::Error) -> Self {
-        format!("{}", err).into()
-    }
-}
-
-impl From<std::env::VarError> for ConfigError {
-    fn from(err: std::env::VarError) -> Self {
-        format!("{}", err).into()
-    }
-}
-
-impl From<Error> for ConfigError {
-    fn from(err: Error) -> Self {
-        format!("{}", err).into()
-    }
-}
-
-macro_rules! errify {
-    ($format:expr, $val:expr) => {
-        return Err(format!($format, $val).into())
-    };
-}
-
-fn get_shell_command(obj: &Mapping, name: &Value) -> Result<Vec<String>, ConfigError> {
+fn get_shell_command(obj: &Mapping, name: &Value) -> Result<Vec<String>> {
     let run = obj
         .get(name)
         .unwrap()
         .as_str()
-        .ok_or(format!("'{}' must be a string", name.as_str().unwrap()))?;
+        .ok_or(anyhow!("'{}' must be a string", name.as_str().unwrap()))?;
 
     shlex::split(run).ok_or_else(|| {
-        format!(
+        anyhow!(
             "'{}' must be a properly formed shell command",
             name.as_str().unwrap()
         )
-        .into()
     })
 }
 
-fn get_env(env: &mut HashMap<String, String>, config_env: &Value) -> Result<(), ConfigError> {
-    let config_env = config_env.as_mapping().ok_or("env must be an object")?;
+fn get_env(env: &mut HashMap<String, String>, config_env: &Value) -> Result<()> {
+    let config_env = config_env
+        .as_mapping()
+        .ok_or(anyhow!("env must be an object"))?;
     for (name, value) in config_env.iter() {
-        let value = value.as_str().ok_or("env vars must be strings")?;
-        let name = name.as_str().ok_or("env var names must be strings")?;
+        let value = value.as_str().ok_or(anyhow!("env vars must be strings"))?;
+        let name = name
+            .as_str()
+            .ok_or(anyhow!("env var names must be strings"))?;
         env.insert(name.to_owned(), value.to_owned());
     }
     Ok(())
@@ -113,8 +78,8 @@ lazy_static! {
     static ref CACHEGRIND: Value = "cachegrind".into();
 }
 
-fn apply_config(config: &mut ProtoConfig, config_val: &Value) -> Result<(), ConfigError> {
-    let config_val = config_val.as_mapping().ok_or("invalid json")?;
+fn apply_config(config: &mut ProtoConfig, config_val: &Value) -> Result<()> {
+    let config_val = config_val.as_mapping().ok_or(anyhow!("invalid json"))?;
 
     if config_val.contains_key(&RUN) {
         config.run = Some(get_shell_command(config_val, &RUN)?);
@@ -128,14 +93,14 @@ fn apply_config(config: &mut ProtoConfig, config_val: &Value) -> Result<(), Conf
         config.timeout = Some(
             timeout_val
                 .as_u64()
-                .ok_or("'timeout' must be a positive integer")?,
+                .ok_or(anyhow!("'timeout' must be a positive integer"))?,
         );
     }
 
     if let Some(cachegrind_val) = config_val.get(&CACHEGRIND) {
         config.cachegrind = cachegrind_val
             .as_bool()
-            .ok_or("'cachegrind' must be a boolean")?;
+            .ok_or(anyhow!("'cachegrind' must be a boolean"))?;
     }
 
     if let Some(env) = config_val.get(&"env".to_owned().into()) {
@@ -144,7 +109,7 @@ fn apply_config(config: &mut ProtoConfig, config_val: &Value) -> Result<(), Conf
     Ok(())
 }
 
-pub(crate) fn get_config(filename: String) -> Result<Config, ConfigError> {
+pub(crate) fn get_config(filename: String) -> Result<Config> {
     let mut config = ProtoConfig {
         setup: None,
         run: None,
@@ -159,23 +124,22 @@ pub(crate) fn get_config(filename: String) -> Result<Config, ConfigError> {
 
     if let Some(variants) = config_val.get("variants") {
         let variant_key = env::var("SIRUN_VARIANT")?;
-        let config_json;
-        if let Some(variants) = variants.as_sequence() {
-            let variant_key = variant_key.parse().unwrap();
+        let config_json = if let Some(variants) = variants.as_sequence() {
+            let variant_key = variant_key.parse()?;
             if variants.len() <= variant_key {
-                errify!("variant index {} does not exist in array", variant_key);
+                bail!("variant index {} does not exist in array", variant_key);
             }
-            config_json = Some(&variants[variant_key]);
+            &variants[variant_key]
         } else if let Some(variants) = variants.as_mapping() {
-            config_json = match variants.get(&variant_key.clone().into()) {
-                Some(val) => Some(val),
-                None => errify!("variant key {} does not exist in object", variant_key),
-            };
+            match variants.get(&variant_key.clone().into()) {
+                Some(val) => val,
+                None => bail!("variant key {} does not exist in object", variant_key),
+            }
         } else {
-            return Err("variants must be array or object".into());
-        }
-        apply_config(&mut config, &config_json.unwrap())?;
+            bail!("variants must be array or object")
+        };
+        apply_config(&mut config, &config_json)?;
     }
 
-    Ok(config.try_into()?)
+    config.try_into()
 }
