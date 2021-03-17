@@ -17,6 +17,7 @@ assert_cmd = "1.0.3"
 serde_yaml = "0.8.17"
 lazy_static = "1.4.0"
 serde = { version = "1.0.124", features = ["derive"] }
+anyhow = "1.0.38"
 
 [dev-dependencies]
 predicates = "1.0.7"
