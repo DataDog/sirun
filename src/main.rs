@@ -87,7 +87,7 @@ fn get_statsd_metrics(metrics: &mut HashMap<String, MetricValue>, udp_data: Stri
 
 fn get_kernel_metrics(metrics: &mut HashMap<String, MetricValue>) {
     let data = unsafe {
-        let mut data = MaybeUninit::uninit().assume_init();
+        let mut data = MaybeUninit::zeroed().assume_init();
         if getrusage(RUSAGE_CHILDREN, &mut data) == -1 {
             return;
         }
