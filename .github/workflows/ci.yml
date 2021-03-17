@@ -19,7 +19,12 @@ jobs:
 
     steps:
       - uses: actions/checkout@v2
-      - name: Stable
+      - name: Install valgrind
+        run: |
+          if [ "$RUNNER_OS" == "Linux" ]; then
+            sudo apt-get install valgrind
+          fi
+      - name: Tests
         run: cargo test
       - name: Clippy
         run: |

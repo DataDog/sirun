@@ -105,3 +105,13 @@ fn stdio() {
         .success()
         .stdout(predicate::str::contains("setup was run").not());
 }
+
+#[cfg(target_arch = "linux")]
+#[test]
+#[serial]
+fn cachegrind() {
+    run!("./examples/cachegrind.json")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("\"instructions\":"));
+}
