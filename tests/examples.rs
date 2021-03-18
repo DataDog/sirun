@@ -106,7 +106,7 @@ fn stdio() {
         .stdout(predicate::str::contains("setup was run").not());
 }
 
-#[cfg(target_arch = "linux")]
+#[cfg(target_os = "linux")]
 #[test]
 #[serial]
 fn cachegrind() {

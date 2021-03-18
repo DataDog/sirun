@@ -1,0 +1,4 @@
+{
+  "run": "bash -c \"exit 0\"",
+  "cachegrind": true
+}
