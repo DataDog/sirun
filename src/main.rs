@@ -106,13 +106,16 @@ fn get_stdio() -> Stdio {
     }
 }
 
-async fn run_setup(setup: &[String], env: &HashMap<String, String>) -> Result<()> {
+async fn run_setup(
+    setup: &[String],
+    config_file: &str,
+    env: &HashMap<String, String>,
+) -> Result<()> {
     let mut code: i32 = 1;
     let mut attempts: u8 = 0;
     while code != 0 {
         if attempts == 100 {
-            eprintln!("setup script did not complete successfully. aborting.");
-            exit(1);
+            bail!("setup script did not complete successfully. aborting.");
         }
         let command = setup[0].clone();
         let args = setup.iter().skip(1);
@@ -124,7 +127,7 @@ async fn run_setup(setup: &[String], env: &HashMap<String, String>) -> Result<()
             .status()
             .await?
             .code()
-            .ok_or(anyhow!("no exit code"))?;
+            .expect("no exit code");
         if code != 0 {
             sleep(Duration::from_secs(1)).await;
             attempts += 1;
@@ -133,12 +136,11 @@ async fn run_setup(setup: &[String], env: &HashMap<String, String>) -> Result<()
 
     // now run in a new process with execvp, skipping setup
     env::set_var("SIRUN_SKIP_SETUP", "true");
-    let filename = env::args().next().unwrap();
     let args: Vec<_> = env::args()
         .map(|s| CString::new(s.as_bytes()).unwrap())
         .collect();
     let args: Vec<&CStr> = args.iter().map(|s| s.as_c_str()).collect();
-    let _ = execvp(CString::new(filename).unwrap().as_c_str(), &args);
+    let _ = execvp(CString::new(config_file).unwrap().as_c_str(), &args);
     // This process stops running past here.
 
     Ok(())
@@ -152,10 +154,11 @@ async fn test_timeout(timeout: u64) {
 
 #[async_std::main]
 async fn main() -> Result<()> {
-    let config = get_config(env::args().nth(1).unwrap())?;
+    let config_file = env::args().nth(1).expect("missing file argument");
+    let config = get_config(&config_file)?;
     if let Some(setup) = config.setup {
         if env::var("SIRUN_SKIP_SETUP").is_err() {
-            run_setup(&setup, &config.env).await?;
+            run_setup(&setup, &config_file, &config.env).await?;
         }
     }
     let statsd_started = Arc::new(Barrier::new(2));
@@ -177,7 +180,7 @@ async fn main() -> Result<()> {
         .stderr(get_stdio())
         .status()
         .await?;
-    let status = status.code().ok_or(anyhow!("no exit code"))?;
+    let status = status.code().expect("no exit code");
     if status != 0 && status <= 128 {
         eprintln!("Test exited with code {}, so aborting test.", status);
         exit(status);
@@ -200,11 +203,11 @@ async fn main() -> Result<()> {
             .lines()
             .filter(|x| x.contains("I   refs:"))
             .next()
-            .ok_or(anyhow!("bad cachegrind output"))?
+            .expect("bad cachegrind output")
             .trim()
             .split_whitespace()
             .last()
-            .ok_or(anyhow!("bad cachegrind output"))?
+            .expect("bad cachegrind output")
             .replace(",", "")
             .parse()?;
         metrics.insert("instructions".into(), instructions.into());
