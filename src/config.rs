@@ -10,6 +10,8 @@ use std::convert::{TryFrom, TryInto};
 use std::{collections::HashMap, env, fs::read_to_string};
 
 pub(crate) struct Config {
+    pub(crate) name: Option<String>,
+    pub(crate) variant: Option<String>,
     pub(crate) setup: Option<Vec<String>>,
     pub(crate) run: Vec<String>,
     pub(crate) timeout: Option<u64>,
@@ -19,6 +21,8 @@ pub(crate) struct Config {
 }
 
 struct ProtoConfig {
+    name: Option<String>,
+    variant: Option<String>,
     setup: Option<Vec<String>>,
     run: Option<Vec<String>>,
     timeout: Option<u64>,
@@ -32,6 +36,8 @@ impl TryFrom<ProtoConfig> for Config {
 
     fn try_from(config: ProtoConfig) -> Result<Config> {
         Ok(Config {
+            name: config.name,
+            variant: config.variant,
             setup: config.setup,
             run: match config.run {
                 Some(run) => run,
@@ -75,25 +81,37 @@ fn get_env(env: &mut HashMap<String, String>, config_env: &Value) -> Result<()> 
 }
 
 lazy_static! {
-    static ref RUN: Value = "run".into();
-    static ref SETUP: Value = "setup".into();
-    static ref TIMEOUT: Value = "timeout".into();
-    static ref CACHEGRIND: Value = "cachegrind".into();
-    static ref ITERATIONS: Value = "iterations".into();
+    static ref NAME_KEY: Value = "name".into();
+    static ref RUN_KEY: Value = "run".into();
+    static ref SETUP_KEY: Value = "setup".into();
+    static ref TIMEOUT_KEY: Value = "timeout".into();
+    static ref CACHEGRIND_KEY: Value = "cachegrind".into();
+    static ref ITERATIONS_KEY: Value = "iterations".into();
 }
 
 fn apply_config(config: &mut ProtoConfig, config_val: &Value) -> Result<()> {
     let config_val = config_val.as_mapping().ok_or(anyhow!("invalid json"))?;
 
-    if config_val.contains_key(&RUN) {
-        config.run = Some(get_shell_command(config_val, &RUN)?);
+    if let Ok(name) = env::var("SIRUN_NAME") {
+        config.name = Some(name)
+    } else if let Some(name_val) = config_val.get(&NAME_KEY) {
+        config.name = Some(
+            name_val
+                .as_str()
+                .ok_or(anyhow!("'name' must be a string"))?
+                .to_owned(),
+        );
     }
 
-    if config_val.contains_key(&SETUP) {
-        config.setup = Some(get_shell_command(config_val, &SETUP)?);
+    if config_val.contains_key(&RUN_KEY) {
+        config.run = Some(get_shell_command(config_val, &RUN_KEY)?);
     }
 
-    if let Some(timeout_val) = config_val.get(&TIMEOUT) {
+    if config_val.contains_key(&SETUP_KEY) {
+        config.setup = Some(get_shell_command(config_val, &SETUP_KEY)?);
+    }
+
+    if let Some(timeout_val) = config_val.get(&TIMEOUT_KEY) {
         config.timeout = Some(
             timeout_val
                 .as_u64()
@@ -101,13 +119,13 @@ fn apply_config(config: &mut ProtoConfig, config_val: &Value) -> Result<()> {
         );
     }
 
-    if let Some(cachegrind_val) = config_val.get(&CACHEGRIND) {
+    if let Some(cachegrind_val) = config_val.get(&CACHEGRIND_KEY) {
         config.cachegrind = cachegrind_val
             .as_bool()
             .ok_or(anyhow!("'cachegrind' must be a boolean"))?;
     }
 
-    if let Some(iterations_val) = config_val.get(&ITERATIONS) {
+    if let Some(iterations_val) = config_val.get(&ITERATIONS_KEY) {
         config.iterations = iterations_val
             .as_u64()
             .ok_or(anyhow!("iterations must be an integer >=1"))?;
@@ -124,6 +142,8 @@ fn apply_config(config: &mut ProtoConfig, config_val: &Value) -> Result<()> {
 
 pub(crate) fn get_config(filename: &str) -> Result<Config> {
     let mut config = ProtoConfig {
+        name: None,
+        variant: None,
         setup: None,
         run: None,
         timeout: None,
@@ -138,6 +158,7 @@ pub(crate) fn get_config(filename: &str) -> Result<Config> {
 
     if let Some(variants) = config_val.get("variants") {
         let variant_key = env::var("SIRUN_VARIANT")?;
+        config.variant = Some(variant_key.clone());
         let config_json = if let Some(variants) = variants.as_sequence() {
             let variant_key = variant_key.parse()?;
             if variants.len() <= variant_key {

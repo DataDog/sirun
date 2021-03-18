@@ -238,8 +238,11 @@ async fn main() -> Result<()> {
     if let Ok(hash) = env::var("GIT_COMMIT_HASH") {
         metrics.insert("version".into(), hash.into());
     }
-    if let Ok(name) = env::var("SIRUN_NAME") {
+    if let Some(name) = config.name {
         metrics.insert("name".into(), name.into());
+    }
+    if let Some(variant) = config.variant {
+        metrics.insert("variant".into(), variant.into());
     }
 
     println!("{}", json!(metrics).to_string());
