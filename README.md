@@ -36,6 +36,7 @@ ensure you have the latest stable Rust toolchain enabled.
 
 Create a JSON or YAML file with the following properties.
 
+* **`name`**: This will be included in the results JSON.
 * **`run`**: The command to run and test. You can format this like a shell
   command with arguments, but note that it will not use a shell as an
   intermediary process. Note that subprocesses will not be measured via the
@@ -48,13 +49,31 @@ Create a JSON or YAML file with the following properties.
 * **`timeout`**: If provided, this is the maximum time, in seconds, a `run` test
   can run for. If it times out, `sirun` will exit with no results, aborting the
   test.
+* **`env`**: A set of environment variables to make available to the `run` and
+  `setup` programs. This should be an object whose keys are the environment
+  variable names and whose values are the environment variable values.
+* **`iterations`**: The number of times to run the the `run` test. If this is
+  more than the default of 1, results for each iteration will be in an
+  `iterations` array in the resultant JSON.
+* **`cachegrind`**: If set to `true`, will run the test (after having already
+  run it normally) using cachegrind to add an instruction count to the results
+  JSON. Will only happen once, and be inserted into the top level JSON,
+  regardless of `iterations`. This requires that `valgrind` is installed on your
+  system.
+* **`variants`**: An array or object whose values are config objects, whose
+  properties may be any of the properties above. It's not recommended to include
+  `name` in a variant. The variant name (if `variants` is an object) or index
+  (if `variants` is an array) will be included in resultant JSON.
 
 ### Environment Variables
 
 * **`GIT_COMMIT_HASH`**: If set, will include a `version` in the
   results.
-* **`SIRUN_NAME`**: If set, will include a `name` in the results.
-* **SIRUN_NO_STDIO**: If set, supresses output from the tested program.
+* **`SIRUN_NAME`**: If set, will include a `name` in the results. This overrides
+  any `name` property set in config JSON/YAML.
+* **`SIRUN_NO_STDIO`**: If set, supresses output from the tested program.
+* **`SIRUN_VARIANT`**: Selects which variant of the test to run. Must be
+  provided if the `variants` property exists in the config JSON/YAML.
 
 ### Example
 
