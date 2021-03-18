@@ -109,7 +109,7 @@ fn apply_config(config: &mut ProtoConfig, config_val: &Value) -> Result<()> {
     Ok(())
 }
 
-pub(crate) fn get_config(filename: String) -> Result<Config> {
+pub(crate) fn get_config(filename: &str) -> Result<Config> {
     let mut config = ProtoConfig {
         setup: None,
         run: None,
