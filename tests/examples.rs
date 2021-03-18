@@ -27,9 +27,18 @@ fn simple_yml() {
 
 #[test]
 #[serial]
-fn simple_name() {
+fn simple_name_env() {
     run!("examples/simple.json")
         .env("SIRUN_NAME", "test test")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("\"name\":\"test test\""));
+}
+
+#[test]
+#[serial]
+fn simple_name() {
+    run!("examples/simple-name.json")
         .assert()
         .success()
         .stdout(predicate::str::contains("\"name\":\"test test\""));
@@ -64,6 +73,12 @@ fn variants() {
         .assert()
         .success()
         .stdout(predicate::str::contains("variant 1"));
+    run!("./examples/variants.json")
+        .env("SIRUN_VARIANT", "1")
+        .env("SIRUN_NO_STDIO", "1")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("\"variant\":\"1\""));
 }
 
 #[test]
