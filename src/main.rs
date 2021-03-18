@@ -26,13 +26,14 @@ use std::{
 };
 
 mod config;
-use config::get_config;
+use config::*;
 
 #[derive(Serialize)]
 #[serde(untagged)]
 enum MetricValue {
     Str(String),
     Num(f64),
+    Arr(Vec<HashMap<String, MetricValue>>),
 }
 
 impl From<String> for MetricValue {
@@ -152,21 +153,11 @@ async fn test_timeout(timeout: u64) {
     exit(1);
 }
 
-#[async_std::main]
-async fn main() -> Result<()> {
-    let config_file = env::args().nth(1).expect("missing file argument");
-    let config = get_config(&config_file)?;
-    if let Some(setup) = config.setup {
-        if env::var("SIRUN_SKIP_SETUP").is_err() {
-            run_setup(&setup, &config_file, &config.env).await?;
-        }
-    }
-    let statsd_started = Arc::new(Barrier::new(2));
-    let statsd_buf = Arc::new(RwLock::new(String::new()));
-    spawn(statsd_listener(statsd_started.clone(), statsd_buf.clone()));
-
-    statsd_started.wait().await; // waits for socket to be listening
-
+async fn run_iteration(
+    config: &Config,
+    mut metrics: &mut HashMap<String, MetricValue>,
+    statsd_buf: Arc<RwLock<String>>,
+) -> Result<()> {
     if let Some(timeout) = config.timeout {
         spawn(test_timeout(timeout));
     }
@@ -185,8 +176,39 @@ async fn main() -> Result<()> {
         eprintln!("Test exited with code {}, so aborting test.", status);
         exit(status);
     }
+    get_kernel_metrics(&mut metrics);
+    get_statsd_metrics(&mut metrics, statsd_buf.read().await.clone())?;
+    statsd_buf.write().await.clear();
+    Ok(())
+}
+
+#[async_std::main]
+async fn main() -> Result<()> {
+    let config_file = env::args().nth(1).expect("missing file argument");
+    let config = get_config(&config_file)?;
+    if let Some(setup) = &config.setup {
+        if env::var("SIRUN_SKIP_SETUP").is_err() {
+            run_setup(&setup, &config_file, &config.env).await?;
+        }
+    }
+
+    let statsd_started = Arc::new(Barrier::new(2));
+    let statsd_buf = Arc::new(RwLock::new(String::new()));
+    spawn(statsd_listener(statsd_started.clone(), statsd_buf.clone()));
+    statsd_started.wait().await; // waits for socket to be listening
 
     let mut metrics: HashMap<String, MetricValue> = HashMap::new();
+    if config.iterations == 1 {
+        run_iteration(&config, &mut metrics, statsd_buf.clone()).await?;
+    } else {
+        let mut iterations = Vec::new();
+        for _ in 0..config.iterations {
+            let mut iteration_metrics = HashMap::new();
+            run_iteration(&config, &mut iteration_metrics, statsd_buf.clone()).await?;
+            iterations.push(iteration_metrics);
+        }
+        metrics.insert("iterations".into(), MetricValue::Arr(iterations));
+    }
 
     if config.cachegrind {
         let command = "valgrind";
@@ -219,8 +241,6 @@ async fn main() -> Result<()> {
     if let Ok(name) = env::var("SIRUN_NAME") {
         metrics.insert("name".into(), name.into());
     }
-    get_kernel_metrics(&mut metrics);
-    get_statsd_metrics(&mut metrics, statsd_buf.read().await.clone())?;
 
     println!("{}", json!(metrics).to_string());
 

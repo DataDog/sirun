@@ -115,3 +115,30 @@ fn cachegrind() {
         .success()
         .stdout(predicate::str::contains("\"instructions\":"));
 }
+
+#[test]
+#[serial]
+fn iterations() {
+    run!("./examples/iterations.json")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "you should see this\nyou should see this\nyou should see this",
+        ));
+    run!("./examples/iterations.json")
+        .env("SIRUN_NO_STDIO", "1")
+        .assert()
+        .success()
+        .stdout(predicate::function(|out| {
+            serde_yaml::from_str::<serde_yaml::Value>(out)
+                .unwrap()
+                .as_mapping()
+                .unwrap()
+                .get(&"iterations".into())
+                .unwrap()
+                .as_sequence()
+                .unwrap()
+                .len()
+                == 3
+        }));
+}
