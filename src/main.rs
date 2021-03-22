@@ -87,6 +87,13 @@ fn get_statsd_metrics(metrics: &mut HashMap<String, MetricValue>, udp_data: Stri
     Ok(())
 }
 
+fn ms_from_timeval(tv: nix::libc::timeval) -> f64 {
+    let seconds = tv.tv_sec;
+    let ms = tv.tv_usec as i64;
+    let val = seconds * 1000000 + ms;
+    val as f64
+}
+
 fn get_kernel_metrics(metrics: &mut HashMap<String, MetricValue>) {
     let data = unsafe {
         let mut data = MaybeUninit::zeroed().assume_init();
@@ -96,8 +103,8 @@ fn get_kernel_metrics(metrics: &mut HashMap<String, MetricValue>) {
         data
     };
     metrics.insert("max.res.size".into(), data.ru_maxrss.into());
-    metrics.insert("user.time".into(), data.ru_utime.tv_usec.into());
-    metrics.insert("system.time".into(), data.ru_stime.tv_usec.into());
+    metrics.insert("user.time".into(), ms_from_timeval(data.ru_utime).into());
+    metrics.insert("system.time".into(), ms_from_timeval(data.ru_stime).into());
 }
 
 fn get_stdio() -> Stdio {
