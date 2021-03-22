@@ -1,0 +1,3 @@
+{
+  "run": "bash -c 'end=$((SECONDS+2)); while [ $SECONDS -lt $end ]; do continue; done'"
+}
