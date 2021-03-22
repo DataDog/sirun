@@ -157,3 +157,22 @@ fn iterations() {
                 == 3
         }));
 }
+
+#[test]
+#[serial]
+fn long() {
+    run!("./examples/long.json")
+        .assert()
+        .success()
+        .stdout(predicate::function(|out| {
+            serde_yaml::from_str::<serde_yaml::Value>(out)
+                .unwrap()
+                .as_mapping()
+                .unwrap()
+                .get(&"user.time".into())
+                .unwrap()
+                .as_f64()
+                .unwrap()
+                > 1000000.0
+        }));
+}
