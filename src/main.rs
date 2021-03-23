@@ -94,7 +94,7 @@ fn ms_from_timeval(tv: nix::libc::timeval) -> f64 {
     val as f64
 }
 
-fn get_kernel_metrics(metrics: &mut HashMap<String, MetricValue>) {
+fn get_kernel_metrics(wall_time: f64, metrics: &mut HashMap<String, MetricValue>) {
     let data = unsafe {
         let mut data = MaybeUninit::zeroed().assume_init();
         if getrusage(RUSAGE_CHILDREN, &mut data) == -1 {
@@ -103,8 +103,12 @@ fn get_kernel_metrics(metrics: &mut HashMap<String, MetricValue>) {
         data
     };
     metrics.insert("max.res.size".into(), data.ru_maxrss.into());
-    metrics.insert("user.time".into(), ms_from_timeval(data.ru_utime).into());
-    metrics.insert("system.time".into(), ms_from_timeval(data.ru_stime).into());
+    let utime = ms_from_timeval(data.ru_utime);
+    let stime = ms_from_timeval(data.ru_stime);
+    metrics.insert("user.time".into(), utime.into());
+    metrics.insert("system.time".into(), stime.into());
+    let pct = (utime + stime) * 100.0 / wall_time;
+    metrics.insert("cpu.pct.wall.time".into(), pct.into());
 }
 
 fn get_stdio() -> Stdio {
@@ -171,6 +175,7 @@ async fn run_iteration(
 
     let command = config.run[0].clone();
     let args = config.run.iter().skip(1);
+    let start_time = std::time::Instant::now();
     let status = Command::new(command)
         .args(args)
         .envs(&config.env)
@@ -178,12 +183,14 @@ async fn run_iteration(
         .stderr(get_stdio())
         .status()
         .await?;
+    let duration = start_time.elapsed().as_micros();
+    metrics.insert("wall.time".to_owned(), (duration as f64).into());
     let status = status.code().expect("no exit code");
     if status != 0 && status <= 128 {
         eprintln!("Test exited with code {}, so aborting test.", status);
         exit(status);
     }
-    get_kernel_metrics(&mut metrics);
+    get_kernel_metrics(duration as f64, &mut metrics);
     get_statsd_metrics(&mut metrics, statsd_buf.read().await.clone())?;
     statsd_buf.write().await.clear();
     Ok(())
