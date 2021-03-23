@@ -157,7 +157,8 @@ pub(crate) fn get_config(filename: &str) -> Result<Config> {
     apply_config(&mut config, &config_val)?;
 
     if let Some(variants) = config_val.get("variants") {
-        let variant_key = env::var("SIRUN_VARIANT")?;
+        let variant_key = env::var("SIRUN_VARIANT")
+            .map_err(|_| anyhow!("If variants are present in config, the SIRUN_VARIANT environment variable must be set."))?;
         config.variant = Some(variant_key.clone());
         let config_json = if let Some(variants) = variants.as_sequence() {
             let variant_key = variant_key.parse()?;
