@@ -13,10 +13,41 @@ macro_rules! run {
     };
 }
 
+macro_rules! json_has {
+    ($name:expr, $blk:expr) => {
+        run!($name)
+            .env("SIRUN_NO_STDIO", "1")
+            .assert()
+            .success()
+            .stdout(predicate::function(|out| {
+                let val = serde_yaml::from_str::<serde_yaml::Value>(out).unwrap();
+                let val = val.as_mapping().unwrap();
+                $blk(val)
+            }));
+    };
+}
+
 #[test]
 #[serial]
 fn simple_json() {
     run!("examples/simple.json").assert().success();
+}
+
+#[test]
+#[serial]
+fn wall_and_cpu_pct() {
+    json_has!("examples/simple.json", move |map: &serde_yaml::Mapping| {
+        let map = map;
+        let wall_time = map.get(&"wall.time".into()).unwrap().as_f64().unwrap();
+        let stime = map.get(&"system.time".into()).unwrap().as_f64().unwrap();
+        let utime = map.get(&"user.time".into()).unwrap().as_f64().unwrap();
+        let pct = map
+            .get(&"cpu.pct.wall.time".into())
+            .unwrap()
+            .as_f64()
+            .unwrap();
+        (pct - ((stime + utime) * 100.0 / wall_time)).abs() < f64::EPSILON
+    });
 }
 
 #[test]
@@ -140,39 +171,20 @@ fn iterations() {
         .stdout(predicate::str::contains(
             "you should see this\nyou should see this\nyou should see this",
         ));
-    run!("./examples/iterations.json")
-        .env("SIRUN_NO_STDIO", "1")
-        .assert()
-        .success()
-        .stdout(predicate::function(|out| {
-            serde_yaml::from_str::<serde_yaml::Value>(out)
-                .unwrap()
-                .as_mapping()
-                .unwrap()
-                .get(&"iterations".into())
-                .unwrap()
-                .as_sequence()
-                .unwrap()
-                .len()
-                == 3
-        }));
+    json_has!("./examples/iterations.json", |map: &serde_yaml::Mapping| {
+        map.get(&"iterations".into())
+            .unwrap()
+            .as_sequence()
+            .unwrap()
+            .len()
+            == 3
+    });
 }
 
 #[test]
 #[serial]
 fn long() {
-    run!("./examples/long.json")
-        .assert()
-        .success()
-        .stdout(predicate::function(|out| {
-            serde_yaml::from_str::<serde_yaml::Value>(out)
-                .unwrap()
-                .as_mapping()
-                .unwrap()
-                .get(&"user.time".into())
-                .unwrap()
-                .as_f64()
-                .unwrap()
-                > 1000000.0
-        }));
+    json_has!("./examples/long.json", |map: &serde_yaml::Mapping| {
+        map.get(&"user.time".into()).unwrap().as_f64().unwrap() > 1000000.0
+    });
 }
