@@ -56,7 +56,7 @@ fn get_shell_command(obj: &Mapping, name: &Value) -> Result<Vec<String>> {
         .get(name)
         .unwrap()
         .as_str()
-        .ok_or(anyhow!("'{}' must be a string", name.as_str().unwrap()))?;
+        .ok_or_else(|| anyhow!("'{}' must be a string", name.as_str().unwrap()))?;
 
     shlex::split(run).ok_or_else(|| {
         anyhow!(
@@ -69,12 +69,14 @@ fn get_shell_command(obj: &Mapping, name: &Value) -> Result<Vec<String>> {
 fn get_env(env: &mut HashMap<String, String>, config_env: &Value) -> Result<()> {
     let config_env = config_env
         .as_mapping()
-        .ok_or(anyhow!("env must be an object"))?;
+        .ok_or_else(|| anyhow!("env must be an object"))?;
     for (name, value) in config_env.iter() {
-        let value = value.as_str().ok_or(anyhow!("env vars must be strings"))?;
+        let value = value
+            .as_str()
+            .ok_or_else(|| anyhow!("env vars must be strings"))?;
         let name = name
             .as_str()
-            .ok_or(anyhow!("env var names must be strings"))?;
+            .ok_or_else(|| anyhow!("env var names must be strings"))?;
         env.insert(name.to_owned(), value.to_owned());
     }
     Ok(())
@@ -90,7 +92,9 @@ lazy_static! {
 }
 
 fn apply_config(config: &mut ProtoConfig, config_val: &Value) -> Result<()> {
-    let config_val = config_val.as_mapping().ok_or(anyhow!("invalid json"))?;
+    let config_val = config_val
+        .as_mapping()
+        .ok_or_else(|| anyhow!("invalid json"))?;
 
     if let Ok(name) = env::var("SIRUN_NAME") {
         config.name = Some(name)
@@ -98,7 +102,7 @@ fn apply_config(config: &mut ProtoConfig, config_val: &Value) -> Result<()> {
         config.name = Some(
             name_val
                 .as_str()
-                .ok_or(anyhow!("'name' must be a string"))?
+                .ok_or_else(|| anyhow!("'name' must be a string"))?
                 .to_owned(),
         );
     }
@@ -115,23 +119,21 @@ fn apply_config(config: &mut ProtoConfig, config_val: &Value) -> Result<()> {
         config.timeout = Some(
             timeout_val
                 .as_u64()
-                .ok_or(anyhow!("'timeout' must be a positive integer"))?,
+                .ok_or_else(|| anyhow!("'timeout' must be a positive integer"))?,
         );
     }
 
     if let Some(cachegrind_val) = config_val.get(&CACHEGRIND_KEY) {
         config.cachegrind = cachegrind_val
             .as_bool()
-            .ok_or(anyhow!("'cachegrind' must be a boolean"))?;
+            .ok_or_else(|| anyhow!("'cachegrind' must be a boolean"))?;
     }
 
     if let Some(iterations_val) = config_val.get(&ITERATIONS_KEY) {
         config.iterations = iterations_val
             .as_u64()
-            .ok_or(anyhow!("iterations must be an integer >=1"))?;
-        if config.iterations == 0 {
-            bail!("iterations must be an integer >=1");
-        }
+            .ok_or_else(|| anyhow!("iterations must be an integer >=1"))?;
+        ensure!(config.iterations > 0, "iterations must be an integer >=1");
     }
 
     if let Some(env) = config_val.get(&"env".to_owned().into()) {
@@ -161,11 +163,13 @@ pub(crate) fn get_config(filename: &str) -> Result<Config> {
             .map_err(|_| anyhow!("If variants are present in config, the SIRUN_VARIANT environment variable must be set."))?;
         config.variant = Some(variant_key.clone());
         let config_json = if let Some(variants) = variants.as_sequence() {
-            let variant_key = variant_key.parse()?;
-            if variants.len() <= variant_key {
-                bail!("variant index {} does not exist in array", variant_key);
-            }
-            &variants[variant_key]
+            let id = variant_key.parse()?;
+            ensure!(
+                variants.len() > id,
+                "variant index {} does not exist in array",
+                id
+            );
+            &variants[id]
         } else if let Some(variants) = variants.as_mapping() {
             match variants.get(&variant_key.clone().into()) {
                 Some(val) => val,

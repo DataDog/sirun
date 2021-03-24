@@ -1,4 +1,4 @@
 {
   "run": "bash -c \"echo you should see this\"",
-  "iterations": 3
+  "iterations": 20
 }

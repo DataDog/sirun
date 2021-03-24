@@ -28,7 +28,7 @@ use std::{
 mod config;
 use config::*;
 
-#[derive(Serialize)]
+#[derive(Serialize, Clone)]
 #[serde(untagged)]
 enum MetricValue {
     Str(String),
@@ -94,7 +94,30 @@ fn ms_from_timeval(tv: nix::libc::timeval) -> f64 {
     val as f64
 }
 
-fn get_kernel_metrics(wall_time: f64, metrics: &mut HashMap<String, MetricValue>) {
+fn get_and_assign_diff(
+    prev: &HashMap<String, MetricValue>,
+    metrics: &mut HashMap<String, MetricValue>,
+    name: &str,
+    val: f64,
+) -> f64 {
+    let prev_val: f64 = if let Some(val) = prev.get(name.into()) {
+        match val {
+            MetricValue::Num(val) => *val,
+            _ => 0.0,
+        }
+    } else {
+        0.0
+    };
+    let result = val - prev_val;
+    metrics.insert(name.into(), result.into());
+    result
+}
+
+fn get_kernel_metrics(
+    wall_time: f64,
+    prev: &HashMap<String, MetricValue>,
+    metrics: &mut HashMap<String, MetricValue>,
+) {
     let data = unsafe {
         let mut data = MaybeUninit::zeroed().assume_init();
         if getrusage(RUSAGE_CHILDREN, &mut data) == -1 {
@@ -102,11 +125,20 @@ fn get_kernel_metrics(wall_time: f64, metrics: &mut HashMap<String, MetricValue>
         }
         data
     };
-    metrics.insert("max.res.size".into(), data.ru_maxrss.into());
-    let utime = ms_from_timeval(data.ru_utime);
-    let stime = ms_from_timeval(data.ru_stime);
-    metrics.insert("user.time".into(), utime.into());
-    metrics.insert("system.time".into(), stime.into());
+    get_and_assign_diff(prev, metrics, "max.res.size", data.ru_maxrss as f64);
+
+    let utime = get_and_assign_diff(
+        prev,
+        metrics,
+        "user.time",
+        ms_from_timeval(data.ru_utime) as f64,
+    );
+    let stime = get_and_assign_diff(
+        prev,
+        metrics,
+        "system.time",
+        ms_from_timeval(data.ru_stime) as f64,
+    );
     let pct = (utime + stime) * 100.0 / wall_time;
     metrics.insert("cpu.pct.wall.time".into(), pct.into());
 }
@@ -166,6 +198,7 @@ async fn test_timeout(timeout: u64) {
 
 async fn run_iteration(
     config: &Config,
+    prev: &HashMap<String, MetricValue>,
     mut metrics: &mut HashMap<String, MetricValue>,
     statsd_buf: Arc<RwLock<String>>,
 ) -> Result<()> {
@@ -190,7 +223,7 @@ async fn run_iteration(
         eprintln!("Test exited with code {}, so aborting test.", status);
         exit(status);
     }
-    get_kernel_metrics(duration as f64, &mut metrics);
+    get_kernel_metrics(duration as f64, &prev, &mut metrics);
     get_statsd_metrics(&mut metrics, statsd_buf.read().await.clone())?;
     statsd_buf.write().await.clear();
     Ok(())
@@ -212,13 +245,15 @@ async fn main() -> Result<()> {
     statsd_started.wait().await; // waits for socket to be listening
 
     let mut metrics: HashMap<String, MetricValue> = HashMap::new();
+    let mut prev = HashMap::new();
     if config.iterations == 1 {
-        run_iteration(&config, &mut metrics, statsd_buf.clone()).await?;
+        run_iteration(&config, &prev, &mut metrics, statsd_buf.clone()).await?;
     } else {
         let mut iterations = Vec::new();
         for _ in 0..config.iterations {
             let mut iteration_metrics = HashMap::new();
-            run_iteration(&config, &mut iteration_metrics, statsd_buf.clone()).await?;
+            run_iteration(&config, &prev, &mut iteration_metrics, statsd_buf.clone()).await?;
+            prev = iteration_metrics.clone();
             iterations.push(iteration_metrics);
         }
         metrics.insert("iterations".into(), MetricValue::Arr(iterations));
