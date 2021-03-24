@@ -177,7 +177,36 @@ fn iterations() {
             .as_sequence()
             .unwrap()
             .len()
-            == 3
+            == 20
+    });
+}
+
+#[test]
+#[serial]
+fn iterations_not_cumulative() {
+    json_has!("./examples/iterations.json", |map: &serde_yaml::Mapping| {
+        let iter = map
+            .get(&"iterations".into())
+            .unwrap()
+            .as_sequence()
+            .unwrap()
+            .iter();
+        let mut prev = 0.0;
+        for iteration in iter {
+            let val = iteration
+                .as_mapping()
+                .unwrap()
+                .get(&"user.time".into())
+                .unwrap()
+                .as_f64()
+                .unwrap();
+            if val < prev {
+                return true;
+            } else {
+                prev = val;
+            }
+        }
+        false
     });
 }
 
