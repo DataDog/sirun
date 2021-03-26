@@ -28,6 +28,15 @@ enum MetricValue {
     Arr(Vec<HashMap<String, MetricValue>>),
 }
 
+impl MetricValue {
+    fn as_f64(self) -> f64 {
+        match self {
+            Self::Num(x) => x,
+            _ => panic!("not an f64"),
+        }
+    }
+}
+
 impl From<String> for MetricValue {
     fn from(string: String) -> Self {
         MetricValue::Str(string)
@@ -128,7 +137,7 @@ async fn test_timeout(timeout: u64) {
     exit(1);
 }
 
-async fn run_iteration(
+async fn run_test(
     config: &Config,
     mut metrics: &mut HashMap<String, MetricValue>,
     statsd_buf: Arc<RwLock<String>>,
@@ -162,10 +171,40 @@ async fn run_iteration(
     Ok(())
 }
 
+async fn run_iteration(
+    config: &Config,
+    mut metrics: &mut HashMap<String, MetricValue>,
+    statsd_buf: Arc<RwLock<String>>,
+) -> Result<()> {
+    let mut config: Config = config.clone();
+    let json_config = serde_yaml::to_string(&config)?;
+    config.env.insert("SIRUN_ITERATION".into(), json_config);
+    config.cachegrind = false;
+    let command = env::args().next().unwrap();
+    let status = Command::new(command)
+        .envs(&config.env)
+        .stdout(get_stdio())
+        .stderr(get_stdio())
+        .status()
+        .await?;
+    let status = status.code().expect("no exit code");
+    if status != 0 && status <= 128 {
+        exit(status);
+    }
+    get_statsd_metrics(&mut metrics, statsd_buf.read().await.clone())?;
+    statsd_buf.write().await.clear();
+    Ok(())
+}
+
 #[async_std::main]
 async fn main() -> Result<()> {
-    let config_file = env::args().nth(1).expect("missing file argument");
-    let config = get_config(&config_file)?;
+    let is_iteration = env::var("SIRUN_ITERATION").is_ok();
+    let config = if is_iteration {
+        serde_yaml::from_str(&env::var("SIRUN_ITERATION").unwrap()).unwrap()
+    } else {
+        let config_file = env::args().nth(1).expect("missing file argument");
+        get_config(&config_file)?
+    };
     if let Some(setup) = &config.setup {
         if env::var("SIRUN_SKIP_SETUP").is_err() {
             run_setup(&setup, &config.env).await?;
@@ -174,12 +213,14 @@ async fn main() -> Result<()> {
 
     let statsd_started = Arc::new(Barrier::new(2));
     let statsd_buf = Arc::new(RwLock::new(String::new()));
-    spawn(statsd_listener(statsd_started.clone(), statsd_buf.clone()));
-    statsd_started.wait().await; // waits for socket to be listening
+    if !is_iteration {
+        spawn(statsd_listener(statsd_started.clone(), statsd_buf.clone()));
+        statsd_started.wait().await; // waits for socket to be listening
+    }
 
     let mut metrics: HashMap<String, MetricValue> = HashMap::new();
-    if config.iterations == 1 {
-        run_iteration(&config, &mut metrics, statsd_buf.clone()).await?;
+    if is_iteration || config.iterations == 1 {
+        run_test(&config, &mut metrics, statsd_buf.clone()).await?;
     } else {
         let mut iterations = Vec::new();
         for _ in 0..config.iterations {
@@ -190,42 +231,55 @@ async fn main() -> Result<()> {
         metrics.insert("iterations".into(), MetricValue::Arr(iterations));
     }
 
-    if config.cachegrind {
-        let command = "valgrind";
-        let mut args = vec!["--tool=cachegrind".to_owned()];
-        args.append(&mut config.run.clone());
-        let output = Command::new(command)
-            .args(args)
-            .envs(&config.env)
-            .output()
-            .await?;
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        let instructions: f64 = stderr
-            .trim()
-            .lines()
-            .filter(|x| x.contains("I   refs:"))
-            .next()
-            .expect("bad cachegrind output")
-            .trim()
-            .split_whitespace()
-            .last()
-            .expect("bad cachegrind output")
-            .replace(",", "")
-            .parse()?;
-        metrics.insert("instructions".into(), instructions.into());
-    }
+    if is_iteration {
+        let buf = format!(
+            "max.res.size:{}|g\nuser.time:{}|g\nsystem.time:{}|g\nwall.time:{}|g\ncpu.pct.wall.time:{}|g\n",
+            metrics.remove("max.res.size").unwrap().as_f64(),
+            metrics.remove("user.time").unwrap().as_f64(),
+            metrics.remove("system.time").unwrap().as_f64(),
+            metrics.remove("wall.time").unwrap().as_f64(),
+            metrics.remove("cpu.pct.wall.time").unwrap().as_f64()
+        );
+        let sock = UdpSocket::bind("127.0.0.1:0").await?;
+        sock.send_to(buf.as_bytes(), "127.0.0.1:8125").await?;
+    } else {
+        if config.cachegrind {
+            let command = "valgrind";
+            let mut args = vec!["--tool=cachegrind".to_owned()];
+            args.append(&mut config.run.clone());
+            let output = Command::new(command)
+                .args(args)
+                .envs(&config.env)
+                .output()
+                .await?;
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            let instructions: f64 = stderr
+                .trim()
+                .lines()
+                .filter(|x| x.contains("I   refs:"))
+                .next()
+                .expect("bad cachegrind output")
+                .trim()
+                .split_whitespace()
+                .last()
+                .expect("bad cachegrind output")
+                .replace(",", "")
+                .parse()?;
+            metrics.insert("instructions".into(), instructions.into());
+        }
 
-    if let Ok(hash) = env::var("GIT_COMMIT_HASH") {
-        metrics.insert("version".into(), hash.into());
-    }
-    if let Some(name) = config.name {
-        metrics.insert("name".into(), name.into());
-    }
-    if let Some(variant) = config.variant {
-        metrics.insert("variant".into(), variant.into());
-    }
+        if let Ok(hash) = env::var("GIT_COMMIT_HASH") {
+            metrics.insert("version".into(), hash.into());
+        }
+        if let Some(name) = config.name {
+            metrics.insert("name".into(), name.into());
+        }
+        if let Some(variant) = config.variant {
+            metrics.insert("variant".into(), variant.into());
+        }
 
-    println!("{}", json!(metrics).to_string());
+        println!("{}", json!(metrics).to_string());
+    }
 
     Ok(())
 }

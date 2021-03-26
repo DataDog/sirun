@@ -5,10 +5,12 @@
 
 use anyhow::*;
 use lazy_static::lazy_static;
+use serde::{Deserialize, Serialize};
 use serde_yaml::{from_str, Mapping, Value};
 use std::convert::{TryFrom, TryInto};
 use std::{collections::HashMap, env, fs::read_to_string};
 
+#[derive(Serialize, Deserialize, Clone)]
 pub(crate) struct Config {
     pub(crate) name: Option<String>,
     pub(crate) variant: Option<String>,
