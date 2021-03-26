@@ -10,23 +10,15 @@ use async_std::{
     sync::{Arc, Barrier, RwLock},
     task::{sleep, spawn},
 };
-use nix::{
-    libc::{getrusage, RUSAGE_CHILDREN},
-    unistd::execvp,
-};
 use serde::Serialize;
 use serde_json::json;
-use std::{
-    collections::HashMap,
-    env,
-    ffi::{CStr, CString},
-    mem::MaybeUninit,
-    process::exit,
-    time::Duration,
-};
+use std::{collections::HashMap, env, process::exit, time::Duration};
 
 mod config;
 use config::*;
+
+mod rusage;
+use rusage::*;
 
 #[derive(Serialize, Clone)]
 #[serde(untagged)]
@@ -87,59 +79,12 @@ fn get_statsd_metrics(metrics: &mut HashMap<String, MetricValue>, udp_data: Stri
     Ok(())
 }
 
-fn ms_from_timeval(tv: nix::libc::timeval) -> f64 {
-    let seconds = tv.tv_sec;
-    let ms = tv.tv_usec as i64;
-    let val = seconds * 1000000 + ms;
-    val as f64
-}
+fn get_kernel_metrics(wall_time: f64, data: Rusage, metrics: &mut HashMap<String, MetricValue>) {
+    metrics.insert("max.res.size".into(), data.max_res_size.into());
+    metrics.insert("user.time".into(), data.user_time.into());
+    metrics.insert("system.time".into(), data.system_time.into());
 
-fn get_and_assign_diff(
-    prev: &HashMap<String, MetricValue>,
-    metrics: &mut HashMap<String, MetricValue>,
-    name: &str,
-    val: f64,
-) -> f64 {
-    let prev_val: f64 = if let Some(val) = prev.get(name.into()) {
-        match val {
-            MetricValue::Num(val) => *val,
-            _ => 0.0,
-        }
-    } else {
-        0.0
-    };
-    let result = val - prev_val;
-    metrics.insert(name.into(), result.into());
-    result
-}
-
-fn get_kernel_metrics(
-    wall_time: f64,
-    prev: &HashMap<String, MetricValue>,
-    metrics: &mut HashMap<String, MetricValue>,
-) {
-    let data = unsafe {
-        let mut data = MaybeUninit::zeroed().assume_init();
-        if getrusage(RUSAGE_CHILDREN, &mut data) == -1 {
-            return;
-        }
-        data
-    };
-    get_and_assign_diff(prev, metrics, "max.res.size", data.ru_maxrss as f64);
-
-    let utime = get_and_assign_diff(
-        prev,
-        metrics,
-        "user.time",
-        ms_from_timeval(data.ru_utime) as f64,
-    );
-    let stime = get_and_assign_diff(
-        prev,
-        metrics,
-        "system.time",
-        ms_from_timeval(data.ru_stime) as f64,
-    );
-    let pct = (utime + stime) * 100.0 / wall_time;
+    let pct = (data.user_time + data.system_time) * 100.0 / wall_time;
     metrics.insert("cpu.pct.wall.time".into(), pct.into());
 }
 
@@ -150,11 +95,7 @@ fn get_stdio() -> Stdio {
     }
 }
 
-async fn run_setup(
-    setup: &[String],
-    config_file: &str,
-    env: &HashMap<String, String>,
-) -> Result<()> {
+async fn run_setup(setup: &[String], env: &HashMap<String, String>) -> Result<()> {
     let mut code: i32 = 1;
     let mut attempts: u8 = 0;
     while code != 0 {
@@ -178,15 +119,6 @@ async fn run_setup(
         }
     }
 
-    // now run in a new process with execvp, skipping setup
-    env::set_var("SIRUN_SKIP_SETUP", "true");
-    let args: Vec<_> = env::args()
-        .map(|s| CString::new(s.as_bytes()).unwrap())
-        .collect();
-    let args: Vec<&CStr> = args.iter().map(|s| s.as_c_str()).collect();
-    let _ = execvp(CString::new(config_file).unwrap().as_c_str(), &args);
-    // This process stops running past here.
-
     Ok(())
 }
 
@@ -198,7 +130,6 @@ async fn test_timeout(timeout: u64) {
 
 async fn run_iteration(
     config: &Config,
-    prev: &HashMap<String, MetricValue>,
     mut metrics: &mut HashMap<String, MetricValue>,
     statsd_buf: Arc<RwLock<String>>,
 ) -> Result<()> {
@@ -209,6 +140,7 @@ async fn run_iteration(
     let command = config.run[0].clone();
     let args = config.run.iter().skip(1);
     let start_time = std::time::Instant::now();
+    let rusage_start = Rusage::new();
     let status = Command::new(command)
         .args(args)
         .envs(&config.env)
@@ -217,13 +149,14 @@ async fn run_iteration(
         .status()
         .await?;
     let duration = start_time.elapsed().as_micros();
+    let rusage_result = Rusage::new() - rusage_start;
     metrics.insert("wall.time".to_owned(), (duration as f64).into());
     let status = status.code().expect("no exit code");
     if status != 0 && status <= 128 {
         eprintln!("Test exited with code {}, so aborting test.", status);
         exit(status);
     }
-    get_kernel_metrics(duration as f64, &prev, &mut metrics);
+    get_kernel_metrics(duration as f64, rusage_result, &mut metrics);
     get_statsd_metrics(&mut metrics, statsd_buf.read().await.clone())?;
     statsd_buf.write().await.clear();
     Ok(())
@@ -235,7 +168,7 @@ async fn main() -> Result<()> {
     let config = get_config(&config_file)?;
     if let Some(setup) = &config.setup {
         if env::var("SIRUN_SKIP_SETUP").is_err() {
-            run_setup(&setup, &config_file, &config.env).await?;
+            run_setup(&setup, &config.env).await?;
         }
     }
 
@@ -245,15 +178,13 @@ async fn main() -> Result<()> {
     statsd_started.wait().await; // waits for socket to be listening
 
     let mut metrics: HashMap<String, MetricValue> = HashMap::new();
-    let mut prev = HashMap::new();
     if config.iterations == 1 {
-        run_iteration(&config, &prev, &mut metrics, statsd_buf.clone()).await?;
+        run_iteration(&config, &mut metrics, statsd_buf.clone()).await?;
     } else {
         let mut iterations = Vec::new();
         for _ in 0..config.iterations {
             let mut iteration_metrics = HashMap::new();
-            run_iteration(&config, &prev, &mut iteration_metrics, statsd_buf.clone()).await?;
-            prev = iteration_metrics.clone();
+            run_iteration(&config, &mut iteration_metrics, statsd_buf.clone()).await?;
             iterations.push(iteration_metrics);
         }
         metrics.insert("iterations".into(), MetricValue::Arr(iterations));
