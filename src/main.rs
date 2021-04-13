@@ -245,7 +245,15 @@ async fn main() -> Result<()> {
     } else {
         if config.cachegrind {
             let command = "valgrind";
-            let mut args = vec!["--tool=cachegrind".to_owned()];
+            let mut args = vec![
+                "--tool=cachegrind".to_owned(),
+                "--trace-children=yes".to_owned(),
+                // Set some reasonable L1 and LL values. It is important that these
+                // values are consistent across runs, instead of the default.
+                "--I1=32768,8,64".to_owned(),
+                "--D1=32768,8,64".to_owned(),
+                "--LL=8388608,16,64".to_owned(),
+            ];
             args.append(&mut config.run.clone());
             let output = Command::new(command)
                 .args(args)
@@ -253,18 +261,23 @@ async fn main() -> Result<()> {
                 .output()
                 .await?;
             let stderr = String::from_utf8_lossy(&output.stderr);
-            let instructions: f64 = stderr
-                .trim()
-                .lines()
-                .filter(|x| x.contains("I   refs:"))
-                .next()
-                .expect("bad cachegrind output")
-                .trim()
-                .split_whitespace()
-                .last()
-                .expect("bad cachegrind output")
-                .replace(",", "")
-                .parse()?;
+
+            let lines = stderr.trim().lines().filter(|x| x.contains("I   refs:"));
+            let mut instructions: f64 = 0.0;
+            for line in lines {
+                instructions += line
+                    .trim()
+                    .split_whitespace()
+                    .last()
+                    .expect("Bad cachegrind output: invalid instruction ref line")
+                    .replace(",", "")
+                    .parse::<f64>()
+                    .expect("Bad cachegrind output: invalid number");
+            }
+            if instructions <= 0.0 {
+                eprintln!("Bad cachegrind output: no instructions parsed");
+                exit(1);
+            }
             metrics.insert("instructions".into(), instructions.into());
         }
 
