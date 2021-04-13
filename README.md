@@ -46,6 +46,8 @@ Create a JSON or YAML file with the following properties.
   availability of services, or retrieve some last-minute dependencies. This can
   be formatted the same way as `run`. It will be run repeatedly at 1 second
   intervals until it exits with status code 0.
+* **`teardown`**: A command to run _after_ the test. This is run in the same
+  manner as `setup`, except after the test has run instead of before.
 * **`timeout`**: If provided, this is the maximum time, in seconds, a `run` test
   can run for. If it times out, `sirun` will exit with no results, aborting the
   test.
