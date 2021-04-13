@@ -15,6 +15,7 @@ pub(crate) struct Config {
     pub(crate) name: Option<String>,
     pub(crate) variant: Option<String>,
     pub(crate) setup: Option<Vec<String>>,
+    pub(crate) teardown: Option<Vec<String>>,
     pub(crate) run: Vec<String>,
     pub(crate) timeout: Option<u64>,
     pub(crate) env: HashMap<String, String>,
@@ -26,6 +27,7 @@ struct ProtoConfig {
     name: Option<String>,
     variant: Option<String>,
     setup: Option<Vec<String>>,
+    teardown: Option<Vec<String>>,
     run: Option<Vec<String>>,
     timeout: Option<u64>,
     env: HashMap<String, String>,
@@ -41,6 +43,7 @@ impl TryFrom<ProtoConfig> for Config {
             name: config.name,
             variant: config.variant,
             setup: config.setup,
+            teardown: config.teardown,
             run: match config.run {
                 Some(run) => run,
                 None => bail!("'run' must be provided"),
@@ -88,6 +91,7 @@ lazy_static! {
     static ref NAME_KEY: Value = "name".into();
     static ref RUN_KEY: Value = "run".into();
     static ref SETUP_KEY: Value = "setup".into();
+    static ref TEARDOWN_KEY: Value = "teardown".into();
     static ref TIMEOUT_KEY: Value = "timeout".into();
     static ref CACHEGRIND_KEY: Value = "cachegrind".into();
     static ref ITERATIONS_KEY: Value = "iterations".into();
@@ -115,6 +119,10 @@ fn apply_config(config: &mut ProtoConfig, config_val: &Value) -> Result<()> {
 
     if config_val.contains_key(&SETUP_KEY) {
         config.setup = Some(get_shell_command(config_val, &SETUP_KEY)?);
+    }
+
+    if config_val.contains_key(&TEARDOWN_KEY) {
+        config.teardown = Some(get_shell_command(config_val, &TEARDOWN_KEY)?);
     }
 
     if let Some(timeout_val) = config_val.get(&TIMEOUT_KEY) {
@@ -149,6 +157,7 @@ pub(crate) fn get_config(filename: &str) -> Result<Config> {
         name: None,
         variant: None,
         setup: None,
+        teardown: None,
         run: None,
         timeout: None,
         env: HashMap::new(),

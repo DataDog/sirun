@@ -93,6 +93,17 @@ fn no_setup() {
 
 #[test]
 #[serial]
+fn teardown() {
+    run!("examples/teardown.json")
+        .assert()
+        .success()
+        .stdout(predicate::str::starts_with(
+            "the test was run\na teardown was run",
+        ));
+}
+
+#[test]
+#[serial]
 fn variants() {
     run!("./examples/variants.json")
         .env("SIRUN_VARIANT", "0")

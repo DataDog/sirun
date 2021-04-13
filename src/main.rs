@@ -104,15 +104,19 @@ fn get_stdio() -> Stdio {
     }
 }
 
-async fn run_setup(setup: &[String], env: &HashMap<String, String>) -> Result<()> {
+async fn run_setup_or_teardown(
+    typ: &str,
+    command_arr: &[String],
+    env: &HashMap<String, String>,
+) -> Result<()> {
     let mut code: i32 = 1;
     let mut attempts: u8 = 0;
     while code != 0 {
         if attempts == 100 {
-            bail!("setup script did not complete successfully. aborting.");
+            bail!("{} script did not complete successfully. aborting.", typ);
         }
-        let command = setup[0].clone();
-        let args = setup.iter().skip(1);
+        let command = command_arr[0].clone();
+        let args = command_arr.iter().skip(1);
         code = Command::new(command)
             .args(args)
             .envs(env.clone())
@@ -129,6 +133,14 @@ async fn run_setup(setup: &[String], env: &HashMap<String, String>) -> Result<()
     }
 
     Ok(())
+}
+
+async fn run_setup(command_arr: &[String], env: &HashMap<String, String>) -> Result<()> {
+    run_setup_or_teardown("setup", command_arr, env).await
+}
+
+async fn run_teardown(command_arr: &[String], env: &HashMap<String, String>) -> Result<()> {
+    run_setup_or_teardown("teardown", command_arr, env).await
 }
 
 async fn test_timeout(timeout: u64) {
@@ -279,6 +291,12 @@ async fn main() -> Result<()> {
                 exit(1);
             }
             metrics.insert("instructions".into(), instructions.into());
+        }
+
+        if let Some(teardown) = &config.teardown {
+            if env::var("SIRUN_SKIP_SETUP").is_err() {
+                run_teardown(&teardown, &config.env).await?;
+            }
         }
 
         if let Ok(hash) = env::var("GIT_COMMIT_HASH") {
