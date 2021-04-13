@@ -1,0 +1,4 @@
+{
+  "teardown": "echo a teardown was run",
+  "run": "echo the test was run"
+}
