@@ -30,7 +30,13 @@ ensure you have the latest stable Rust toolchain enabled.
 
 #### Without cloning locally
 
-`cargo install --git git@github.com:DataDog/sirun.git`
+With SSH
+
+`cargo install --git ssh://git@github.com:22/DataDog/sirun.git --branch main`
+
+or with HTTPS
+
+`cargo install --git https://github.com/DataDog/sirun.git --branch main`
 
 ## Usage
 
