@@ -37,7 +37,12 @@ fn simple_json() {
 #[serial]
 fn wall_and_cpu_pct() {
     json_has!("examples/simple.json", move |map: &serde_yaml::Mapping| {
-        let map = map;
+        let map = map
+            .get(&"iterations".into())
+            .unwrap()
+            .as_sequence()
+            .unwrap();
+        let map = map.get(0).unwrap().as_mapping().unwrap();
         let wall_time = map.get(&"wall.time".into()).unwrap().as_f64().unwrap();
         let stime = map.get(&"system.time".into()).unwrap().as_f64().unwrap();
         let utime = map.get(&"user.time".into()).unwrap().as_f64().unwrap();
@@ -194,6 +199,12 @@ fn iterations() {
 
 #[test]
 #[serial]
+fn iterations_nohup() {
+    run!("./examples/iterations-nohup.json").assert().success();
+}
+
+#[test]
+#[serial]
 fn iterations_not_cumulative() {
     json_has!("./examples/iterations.json", |map: &serde_yaml::Mapping| {
         let iter = map
@@ -225,6 +236,16 @@ fn iterations_not_cumulative() {
 #[serial]
 fn long() {
     json_has!("./examples/long.json", |map: &serde_yaml::Mapping| {
-        map.get(&"user.time".into()).unwrap().as_f64().unwrap() > 1000000.0
+        map.get(&"iterations".into())
+            .unwrap()
+            .get(0)
+            .unwrap()
+            .as_mapping()
+            .unwrap()
+            .get(&"user.time".into())
+            .unwrap()
+            .as_f64()
+            .unwrap()
+            > 1000000.0
     });
 }

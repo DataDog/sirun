@@ -104,11 +104,20 @@ fn get_stdio() -> Stdio {
     }
 }
 
-async fn run_setup_or_teardown(
-    typ: &str,
-    command_arr: &[String],
-    env: &HashMap<String, String>,
-) -> Result<()> {
+async fn run_setup_or_teardown(typ: &str, config: &Config) -> Result<()> {
+    if env::var("SIRUN_SKIP_SETUP").is_ok() {
+        return Ok(());
+    }
+    let command_arr = if typ == "setup" {
+        &config.setup
+    } else {
+        &config.teardown
+    };
+    let command_arr = match command_arr {
+        Some(command_arr) => command_arr,
+        None => return Ok(()),
+    };
+    let env = &config.env;
     let mut code: i32 = 1;
     let mut attempts: u8 = 0;
     while code != 0 {
@@ -135,12 +144,12 @@ async fn run_setup_or_teardown(
     Ok(())
 }
 
-async fn run_setup(command_arr: &[String], env: &HashMap<String, String>) -> Result<()> {
-    run_setup_or_teardown("setup", command_arr, env).await
+async fn run_setup(config: &Config) -> Result<()> {
+    run_setup_or_teardown("setup", config).await
 }
 
-async fn run_teardown(command_arr: &[String], env: &HashMap<String, String>) -> Result<()> {
-    run_setup_or_teardown("teardown", command_arr, env).await
+async fn run_teardown(config: &Config) -> Result<()> {
+    run_setup_or_teardown("teardown", config).await
 }
 
 async fn test_timeout(timeout: u64) {
@@ -149,11 +158,7 @@ async fn test_timeout(timeout: u64) {
     exit(1);
 }
 
-async fn run_test(
-    config: &Config,
-    mut metrics: &mut HashMap<String, MetricValue>,
-    statsd_buf: Arc<RwLock<String>>,
-) -> Result<()> {
+async fn run_test(config: &Config, mut metrics: &mut HashMap<String, MetricValue>) -> Result<()> {
     if let Some(timeout) = config.timeout {
         spawn(test_timeout(timeout));
     }
@@ -178,23 +183,22 @@ async fn run_test(
         exit(status);
     }
     get_kernel_metrics(duration as f64, rusage_result, &mut metrics);
-    get_statsd_metrics(&mut metrics, statsd_buf.read().await.clone())?;
-    statsd_buf.write().await.clear();
     Ok(())
 }
 
 async fn run_iteration(
     config: &Config,
-    mut metrics: &mut HashMap<String, MetricValue>,
     statsd_buf: Arc<RwLock<String>>,
-) -> Result<()> {
-    let mut config: Config = config.clone();
+) -> Result<HashMap<String, MetricValue>> {
+    run_setup(&config).await?;
+
+    let mut metrics = HashMap::new();
+    let mut sub_config: Config = config.clone();
     let json_config = serde_yaml::to_string(&config)?;
-    config.env.insert("SIRUN_ITERATION".into(), json_config);
-    config.cachegrind = false;
+    sub_config.env.insert("SIRUN_ITERATION".into(), json_config);
     let command = env::args().next().unwrap();
     let status = Command::new(command)
-        .envs(&config.env)
+        .envs(&sub_config.env)
         .stdout(get_stdio())
         .stderr(get_stdio())
         .status()
@@ -205,112 +209,109 @@ async fn run_iteration(
     }
     get_statsd_metrics(&mut metrics, statsd_buf.read().await.clone())?;
     statsd_buf.write().await.clear();
+
+    run_teardown(&config).await?;
+
+    Ok(metrics)
+}
+
+async fn main_main() -> Result<()> {
+    let config_file = env::args().nth(1).expect("missing file argument");
+    let config = get_config(&config_file)?;
+
+    let mut metrics: HashMap<String, MetricValue> = HashMap::new();
+
+    let statsd_started = Arc::new(Barrier::new(2));
+    let statsd_buf = Arc::new(RwLock::new(String::new()));
+
+    spawn(statsd_listener(statsd_started.clone(), statsd_buf.clone()));
+    statsd_started.wait().await; // waits for socket to be listening
+
+    let mut iterations = Vec::new();
+    for _ in 0..config.iterations {
+        iterations.push(run_iteration(&config, statsd_buf.clone()).await?);
+    }
+    metrics.insert("iterations".into(), MetricValue::Arr(iterations));
+
+    if config.cachegrind {
+        let command = "valgrind";
+        let mut args = vec![
+            "--tool=cachegrind".to_owned(),
+            "--trace-children=yes".to_owned(),
+            // Set some reasonable L1 and LL values. It is important that these
+            // values are consistent across runs, instead of the default.
+            "--I1=32768,8,64".to_owned(),
+            "--D1=32768,8,64".to_owned(),
+            "--LL=8388608,16,64".to_owned(),
+        ];
+        args.append(&mut config.run.clone());
+        run_setup(&config).await?;
+        let output = Command::new(command)
+            .args(args)
+            .envs(&config.env)
+            .output()
+            .await?;
+        run_teardown(&config).await?;
+        let stderr = String::from_utf8_lossy(&output.stderr);
+
+        let lines = stderr.trim().lines().filter(|x| x.contains("I   refs:"));
+        let mut instructions: f64 = 0.0;
+        for line in lines {
+            instructions += line
+                .trim()
+                .split_whitespace()
+                .last()
+                .expect("Bad cachegrind output: invalid instruction ref line")
+                .replace(",", "")
+                .parse::<f64>()
+                .expect("Bad cachegrind output: invalid number");
+        }
+        if instructions <= 0.0 {
+            eprintln!("Bad cachegrind output: no instructions parsed");
+            exit(1);
+        }
+        metrics.insert("instructions".into(), instructions.into());
+    }
+
+    if let Ok(hash) = env::var("GIT_COMMIT_HASH") {
+        metrics.insert("version".into(), hash.into());
+    }
+    if let Some(name) = config.name {
+        metrics.insert("name".into(), name.into());
+    }
+    if let Some(variant) = config.variant {
+        metrics.insert("variant".into(), variant.into());
+    }
+
+    println!("{}", json!(metrics).to_string());
+    Ok(())
+}
+
+async fn iteration_main() -> Result<()> {
+    let config = serde_yaml::from_str(&env::var("SIRUN_ITERATION").unwrap()).unwrap();
+
+    let mut metrics: HashMap<String, MetricValue> = HashMap::new();
+
+    run_test(&config, &mut metrics).await?;
+
+    let buf = format!(
+        "max.res.size:{}|g\nuser.time:{}|g\nsystem.time:{}|g\nwall.time:{}|g\ncpu.pct.wall.time:{}|g\n",
+        metrics.remove("max.res.size").unwrap().as_f64(),
+        metrics.remove("user.time").unwrap().as_f64(),
+        metrics.remove("system.time").unwrap().as_f64(),
+        metrics.remove("wall.time").unwrap().as_f64(),
+        metrics.remove("cpu.pct.wall.time").unwrap().as_f64()
+        );
+    let sock = UdpSocket::bind("127.0.0.1:0").await?;
+    sock.send_to(buf.as_bytes(), "127.0.0.1:8125").await?;
     Ok(())
 }
 
 #[async_std::main]
 async fn main() -> Result<()> {
-    let is_iteration = env::var("SIRUN_ITERATION").is_ok();
-    let config = if is_iteration {
-        serde_yaml::from_str(&env::var("SIRUN_ITERATION").unwrap()).unwrap()
+    if env::var("SIRUN_ITERATION").is_ok() {
+        iteration_main().await
     } else {
-        let config_file = env::args().nth(1).expect("missing file argument");
-        get_config(&config_file)?
-    };
-    if let Some(setup) = &config.setup {
-        if env::var("SIRUN_SKIP_SETUP").is_err() {
-            run_setup(&setup, &config.env).await?;
-        }
+        main_main().await
     }
-
-    let statsd_started = Arc::new(Barrier::new(2));
-    let statsd_buf = Arc::new(RwLock::new(String::new()));
-    if !is_iteration {
-        spawn(statsd_listener(statsd_started.clone(), statsd_buf.clone()));
-        statsd_started.wait().await; // waits for socket to be listening
-    }
-
-    let mut metrics: HashMap<String, MetricValue> = HashMap::new();
-    if is_iteration || config.iterations == 1 {
-        run_test(&config, &mut metrics, statsd_buf.clone()).await?;
-    } else {
-        let mut iterations = Vec::new();
-        for _ in 0..config.iterations {
-            let mut iteration_metrics = HashMap::new();
-            run_iteration(&config, &mut iteration_metrics, statsd_buf.clone()).await?;
-            iterations.push(iteration_metrics);
-        }
-        metrics.insert("iterations".into(), MetricValue::Arr(iterations));
-    }
-
-    if is_iteration {
-        let buf = format!(
-            "max.res.size:{}|g\nuser.time:{}|g\nsystem.time:{}|g\nwall.time:{}|g\ncpu.pct.wall.time:{}|g\n",
-            metrics.remove("max.res.size").unwrap().as_f64(),
-            metrics.remove("user.time").unwrap().as_f64(),
-            metrics.remove("system.time").unwrap().as_f64(),
-            metrics.remove("wall.time").unwrap().as_f64(),
-            metrics.remove("cpu.pct.wall.time").unwrap().as_f64()
-        );
-        let sock = UdpSocket::bind("127.0.0.1:0").await?;
-        sock.send_to(buf.as_bytes(), "127.0.0.1:8125").await?;
-    } else {
-        if config.cachegrind {
-            let command = "valgrind";
-            let mut args = vec![
-                "--tool=cachegrind".to_owned(),
-                "--trace-children=yes".to_owned(),
-                // Set some reasonable L1 and LL values. It is important that these
-                // values are consistent across runs, instead of the default.
-                "--I1=32768,8,64".to_owned(),
-                "--D1=32768,8,64".to_owned(),
-                "--LL=8388608,16,64".to_owned(),
-            ];
-            args.append(&mut config.run.clone());
-            let output = Command::new(command)
-                .args(args)
-                .envs(&config.env)
-                .output()
-                .await?;
-            let stderr = String::from_utf8_lossy(&output.stderr);
-
-            let lines = stderr.trim().lines().filter(|x| x.contains("I   refs:"));
-            let mut instructions: f64 = 0.0;
-            for line in lines {
-                instructions += line
-                    .trim()
-                    .split_whitespace()
-                    .last()
-                    .expect("Bad cachegrind output: invalid instruction ref line")
-                    .replace(",", "")
-                    .parse::<f64>()
-                    .expect("Bad cachegrind output: invalid number");
-            }
-            if instructions <= 0.0 {
-                eprintln!("Bad cachegrind output: no instructions parsed");
-                exit(1);
-            }
-            metrics.insert("instructions".into(), instructions.into());
-        }
-
-        if let Some(teardown) = &config.teardown {
-            if env::var("SIRUN_SKIP_SETUP").is_err() {
-                run_teardown(&teardown, &config.env).await?;
-            }
-        }
-
-        if let Ok(hash) = env::var("GIT_COMMIT_HASH") {
-            metrics.insert("version".into(), hash.into());
-        }
-        if let Some(name) = config.name {
-            metrics.insert("name".into(), name.into());
-        }
-        if let Some(variant) = config.variant {
-            metrics.insert("variant".into(), variant.into());
-        }
-
-        println!("{}", json!(metrics).to_string());
-    }
-
-    Ok(())
 }
