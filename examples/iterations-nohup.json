@@ -1,0 +1,6 @@
+{
+  "setup": "bash -c \"nohup watch ls & echo $! > server.pid\"",
+  "run": "bash -c \"cat server.pid; ps aux | grep watch | grep ls; sleep 1\"",
+  "teardown": "bash -c \"echo killing; kill -9 `cat server.pid`; rm server.pid\"",
+  "iterations": 3
+}
