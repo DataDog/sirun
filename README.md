@@ -60,9 +60,9 @@ Create a JSON or YAML file with the following properties.
 * **`env`**: A set of environment variables to make available to the `run` and
   `setup` programs. This should be an object whose keys are the environment
   variable names and whose values are the environment variable values.
-* **`iterations`**: The number of times to run the the `run` test. If this is
-  more than the default of 1, results for each iteration will be in an
-  `iterations` array in the resultant JSON.
+* **`iterations`**: The number of times to run the the `run` test. The results
+  for each iteration will be in an `iterations` array in the resultant JSON. The
+  default is 1.
 * **`cachegrind`**: If set to `true`, will run the test (after having already
   run it normally) using cachegrind to add an instruction count to the results
   JSON. Will only happen once, and be inserted into the top level JSON,
@@ -112,7 +112,7 @@ This will output something like the following.
   % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
                                  Dload  Upload   Total   Spent    Left  Speed
   0     0    0     0    0     0      0      0 --:--:-- --:--:-- --:--:--     0
-{"version":"123abc","name":"test_some_stuff","user.time":6389.0,"system.time":8737.0,"udp.data":50.0,"max.res.size":2240512.0}
+{"version":"123abc","name":"test_some_stuff",iterations:[{"user.time":6389.0,"system.time":8737.0,"udp.data":50.0,"max.res.size":2240512.0}]}
 ```
 
 ## License
