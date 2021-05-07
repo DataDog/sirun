@@ -12,6 +12,7 @@ use async_std::{
 };
 use serde_json::json;
 use std::{collections::HashMap, env, process::exit};
+use which::which;
 
 mod config;
 use config::*;
@@ -102,7 +103,7 @@ async fn main_main() -> Result<()> {
     }
     metrics.insert("iterations".into(), MetricValue::Arr(iterations));
 
-    if config.cachegrind {
+    if config.cachegrind && which("valgrind").is_ok() {
         let command = "valgrind";
         let mut args = vec![
             "--tool=cachegrind".to_owned(),
