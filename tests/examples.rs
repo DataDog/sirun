@@ -177,14 +177,20 @@ fn stdio() {
         .stdout(predicate::str::contains("setup was run").not());
 }
 
-#[cfg(target_os = "linux")]
 #[test]
 #[serial]
 fn cachegrind() {
-    run!("./examples/cachegrind.json")
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("\"instructions\":"));
+    if std::env::consts::OS == "linux" {
+        run!("./examples/cachegrind.json")
+            .assert()
+            .success()
+            .stdout(predicate::str::contains("\"instructions\":"));
+    } else {
+        run!("./examples/cachegrind.json")
+            .assert()
+            .success()
+            .stdout(predicate::str::contains("\"instructions\":").not());
+    }
 }
 
 #[test]
