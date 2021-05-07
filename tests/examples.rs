@@ -130,6 +130,15 @@ fn variants() {
 
 #[test]
 #[serial]
+fn all_variants() {
+    run!("./examples/variants.json")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("variant 0").and(predicate::str::contains("variant 1")));
+}
+
+#[test]
+#[serial]
 fn timeout() {
     run!("examples/timeout.json").assert().failure();
 }

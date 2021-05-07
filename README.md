@@ -80,8 +80,10 @@ Create a JSON or YAML file with the following properties.
 * **`SIRUN_NAME`**: If set, will include a `name` in the results. This overrides
   any `name` property set in config JSON/YAML.
 * **`SIRUN_NO_STDIO`**: If set, supresses output from the tested program.
-* **`SIRUN_VARIANT`**: Selects which variant of the test to run. Must be
-  provided if the `variants` property exists in the config JSON/YAML.
+* **`SIRUN_VARIANT`**: Selects which variant of the test to run. If the
+  `variants` property exists in the config JSON/YAML, and this variable is not
+  set, then _all_ variants will be run, one-by-one, each having its own line of
+  output JSON.
 
 ### Example
 
