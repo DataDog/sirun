@@ -6,7 +6,7 @@
 use anyhow::*;
 use async_std::{
     net::UdpSocket,
-    process::Command,
+    process::{Command, Stdio},
     sync::{Arc, Barrier, RwLock},
     task::{sleep, spawn},
 };
@@ -84,9 +84,31 @@ async fn run_iteration(
     Ok(metrics)
 }
 
+async fn run_all_variants(variants: Vec<String>) -> Result<()> {
+    let args: Vec<_> = env::args().collect();
+    let cmd = args[0].clone();
+    let args: Vec<_> = args.iter().skip(1).collect();
+    for variant in variants {
+        env::set_var("SIRUN_VARIANT", variant);
+        Command::new(&cmd)
+            .args(&args)
+            .stdin(Stdio::inherit())
+            .stdout(Stdio::inherit())
+            .stderr(Stdio::inherit())
+            .status()
+            .await?;
+    }
+    Ok(())
+}
+
 async fn main_main() -> Result<()> {
     let config_file = env::args().nth(1).expect("missing file argument");
     let config = get_config(&config_file)?;
+
+    if let Some(variants) = config.variants {
+        run_all_variants(variants).await?;
+        return Ok(());
+    }
 
     let mut metrics: HashMap<String, MetricValue> = HashMap::new();
 

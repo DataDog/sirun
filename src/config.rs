@@ -21,6 +21,7 @@ pub(crate) struct Config {
     pub(crate) env: HashMap<String, String>,
     pub(crate) cachegrind: bool,
     pub(crate) iterations: u64,
+    pub(crate) variants: Option<Vec<String>>,
 }
 
 struct ProtoConfig {
@@ -33,6 +34,7 @@ struct ProtoConfig {
     env: HashMap<String, String>,
     cachegrind: bool,
     iterations: u64,
+    variants: Option<Vec<String>>,
 }
 
 impl TryFrom<ProtoConfig> for Config {
@@ -52,6 +54,7 @@ impl TryFrom<ProtoConfig> for Config {
             env: config.env,
             cachegrind: config.cachegrind,
             iterations: config.iterations,
+            variants: config.variants,
         })
     }
 }
@@ -163,6 +166,7 @@ pub(crate) fn get_config(filename: &str) -> Result<Config> {
         env: HashMap::new(),
         cachegrind: false,
         iterations: 1,
+        variants: None,
     };
     let json_str = read_to_string(filename)?;
     let config_val: Value = from_str(&json_str)?;
@@ -170,8 +174,27 @@ pub(crate) fn get_config(filename: &str) -> Result<Config> {
     apply_config(&mut config, &config_val)?;
 
     if let Some(variants) = config_val.get("variants") {
-        let variant_key = env::var("SIRUN_VARIANT")
-            .map_err(|_| anyhow!("If variants are present in config, the SIRUN_VARIANT environment variable must be set."))?;
+        let variant_key = match env::var("SIRUN_VARIANT") {
+            Ok(variant_key) => variant_key,
+            Err(_) => {
+                if let Some(variants) = variants.as_sequence() {
+                    let usize_ids: Vec<usize> = (0..variants.len()).collect();
+                    config.variants = Some(usize_ids.iter().map(|i| i.to_string()).collect());
+                    return config.try_into();
+                } else if let Some(variants) = variants.as_mapping() {
+                    config.variants = Some(
+                        variants
+                            .iter()
+                            .map(|(k, _v)| k.as_str().unwrap().to_owned())
+                            .collect(),
+                    );
+                    return config.try_into();
+                } else {
+                    bail!("variants must be an array or object");
+                }
+            }
+        };
+
         config.variant = Some(variant_key.clone());
         let config_json = if let Some(variants) = variants.as_sequence() {
             let id = variant_key.parse()?;
