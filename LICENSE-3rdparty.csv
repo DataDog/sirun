@@ -1,5 +1,6 @@
 Component,Origin,License,Copyright
 aho-corasick,https://github.com/BurntSushi/aho-corasick,MIT OR Unlicense,Andrew Gallant <jamslam@gmail.com>
+anyhow,https://github.com/dtolnay/anyhow,Apache-2.0 OR MIT,David Tolnay <dtolnay@gmail.com>
 assert_cmd,https://github.com/assert-rs/assert_cmd.git,Apache-2.0 OR MIT,Pascal Hertleif <killercup@gmail.com>|Ed Page <eopage@gmail.com>
 async-attributes,https://github.com/async-rs/async-attributes,Apache-2.0 OR MIT,Yoshua Wuyts <yoshuawuyts@gmail.com>
 async-channel,https://github.com/smol-rs/async-channel,Apache-2.0 OR MIT,Stjepan Glavina <stjepang@gmail.com>
@@ -28,6 +29,7 @@ ctor,https://github.com/mmastrac/rust-ctor,Apache-2.0 OR MIT,Matt Mastracci <mat
 difference,https://github.com/johannhof/difference.rs,MIT,Johann Hofmann <mail@johann-hofmann.com>
 doc-comment,https://github.com/GuillaumeGomez/doc-comment,MIT,Guillaume Gomez <guillaume1.gomez@gmail.com>
 dtoa,https://github.com/dtolnay/dtoa,Apache-2.0 OR MIT,David Tolnay <dtolnay@gmail.com>
+either,https://github.com/bluss/either,Apache-2.0 OR MIT,bluss
 event-listener,https://github.com/stjepang/event-listener,Apache-2.0 OR MIT,Stjepan Glavina <stjepang@gmail.com>
 fastrand,https://github.com/stjepang/fastrand,Apache-2.0 OR MIT,Stjepan Glavina <stjepang@gmail.com>
 float-cmp,https://github.com/mikedilger/float-cmp,MIT,Mike Dilger <mike@mikedilger.com>
@@ -71,6 +73,7 @@ regex-syntax,https://github.com/rust-lang/regex,Apache-2.0 OR MIT,The Rust Proje
 ryu,https://github.com/dtolnay/ryu,Apache-2.0 OR BSL-1.0,David Tolnay <dtolnay@gmail.com>
 scopeguard,https://github.com/bluss/scopeguard,Apache-2.0 OR MIT,bluss
 serde,https://github.com/serde-rs/serde,Apache-2.0 OR MIT,Erick Tryzelaar <erick.tryzelaar@gmail.com>|David Tolnay <dtolnay@gmail.com>
+serde_derive,https://github.com/serde-rs/serde,Apache-2.0 OR MIT,Erick Tryzelaar <erick.tryzelaar@gmail.com>|David Tolnay <dtolnay@gmail.com>
 serde_json,https://github.com/serde-rs/json,Apache-2.0 OR MIT,Erick Tryzelaar <erick.tryzelaar@gmail.com>|David Tolnay <dtolnay@gmail.com>
 serde_yaml,https://github.com/dtolnay/serde-yaml,Apache-2.0 OR MIT,David Tolnay <dtolnay@gmail.com>
 serial_test,https://github.com/palfrey/serial_test/,MIT,Tom Parker-Shemilt <palfrey@tevp.net>
@@ -97,6 +100,7 @@ wasm-bindgen-macro-support,https://github.com/rustwasm/wasm-bindgen/tree/master/
 wasm-bindgen-shared,https://github.com/rustwasm/wasm-bindgen/tree/master/crates/shared,Apache-2.0 OR MIT,The wasm-bindgen Developers
 web-sys,https://github.com/rustwasm/wasm-bindgen/tree/master/crates/web-sys,Apache-2.0 OR MIT,The wasm-bindgen Developers
 wepoll-sys,https://gitlab.com/yorickpeterse/wepoll-sys,MPL-2.0,Yorick Peterse <yorickpeterse@gmail.com>
+which,https://github.com/harryfei/which-rs.git,MIT,Harry Fei <tiziyuanfang@gmail.com>
 winapi,https://github.com/retep998/winapi-rs,Apache-2.0 OR MIT,Peter Atashian <retep998@gmail.com>
 winapi-i686-pc-windows-gnu,https://github.com/retep998/winapi-rs,Apache-2.0 OR MIT,Peter Atashian <retep998@gmail.com>
 winapi-x86_64-pc-windows-gnu,https://github.com/retep998/winapi-rs,Apache-2.0 OR MIT,Peter Atashian <retep998@gmail.com>
