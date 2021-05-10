@@ -6,6 +6,7 @@
 use assert_cmd;
 use predicates::prelude::*;
 use serial_test::serial;
+use std::path::PathBuf;
 
 macro_rules! run {
     ($file:expr) => {
@@ -263,4 +264,17 @@ fn long() {
             .unwrap()
             > 1000000.0
     });
+}
+
+#[test]
+#[serial]
+fn summarize() {
+    let mut in_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    in_path.push("tests/fixtures/summary/in.ndjson");
+    let mut out_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    out_path.push("tests/fixtures/summary/out.json");
+    run!("--summarize")
+        .write_stdin(std::fs::read(in_path).unwrap())
+        .output()
+        .expect(&std::fs::read_to_string(out_path).unwrap());
 }
