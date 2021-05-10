@@ -11,9 +11,9 @@ pub(crate) enum MetricValue {
 }
 
 impl MetricValue {
-    pub(crate) fn as_f64(self) -> f64 {
+    pub(crate) fn as_f64(&self) -> f64 {
         match self {
-            Self::Num(x) => x,
+            Self::Num(x) => *x,
             _ => panic!("not an f64"),
         }
     }
@@ -32,14 +32,14 @@ impl MetricValue {
         }
     }
 
-    pub(crate) fn as_string(self) -> String {
+    pub(crate) fn as_string(&self) -> String {
         match self {
             Self::Str(x) => x.clone(),
             _ => panic!("not a string"),
         }
     }
 
-    pub(crate) fn as_vec(self) -> Vec<MetricValue> {
+    pub(crate) fn as_vec(&self) -> Vec<MetricValue> {
         match self {
             Self::Arr(x) => x.clone(),
             _ => panic!("not a string"),
@@ -50,6 +50,12 @@ impl MetricValue {
 impl From<String> for MetricValue {
     fn from(string: String) -> Self {
         MetricValue::Str(string)
+    }
+}
+
+impl From<MetricMap> for MetricValue {
+    fn from(map: MetricMap) -> Self {
+        MetricValue::Map(map)
     }
 }
 

@@ -75,7 +75,11 @@ async fn run_iteration(
     let mut sub_config: Config = config.clone();
     let json_config = serde_yaml::to_string(&config)?;
     sub_config.env.insert("SIRUN_ITERATION".into(), json_config);
-    let status = run_cmd(&env::args().take(1).collect(), &sub_config.env).await?;
+    let status = run_cmd(
+        &env::args().take(1).collect::<Vec<String>>(),
+        &sub_config.env,
+    )
+    .await?;
     let status = status.code().expect("no exit code");
     if status != 0 && status <= 128 {
         exit(status);
@@ -105,8 +109,10 @@ async fn run_all_variants(variants: Vec<String>) -> Result<()> {
 }
 
 async fn main_main() -> Result<()> {
-    if env::args().nth(1).unwrap() == "--summarize" {
-        return summarize().await;
+    if let Some(first_arg) = env::args().nth(1) {
+        if first_arg == "--summarize" {
+            return summarize().await;
+        }
     }
     let config_file = env::args().nth(1).expect("missing file argument");
     let config = get_config(&config_file)?;
