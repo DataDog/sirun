@@ -56,7 +56,7 @@ fn get_stdio() -> Stdio {
 }
 
 pub(crate) async fn run_cmd(
-    command_arr: &Vec<String>,
+    command_arr: &[String],
     env: &HashMap<String, String>,
 ) -> Result<ExitStatus> {
     let command = command_arr[0].clone();
