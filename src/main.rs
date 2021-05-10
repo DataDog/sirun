@@ -28,6 +28,9 @@ use statsd::*;
 mod metric_value;
 use metric_value::*;
 
+mod summarize;
+use summarize::*;
+
 fn get_kernel_metrics(wall_time: f64, data: Rusage, metrics: &mut HashMap<String, MetricValue>) {
     metrics.insert("max.res.size".into(), data.max_res_size.into());
     metrics.insert("user.time".into(), data.user_time.into());
@@ -102,6 +105,9 @@ async fn run_all_variants(variants: Vec<String>) -> Result<()> {
 }
 
 async fn main_main() -> Result<()> {
+    if env::args().nth(1).unwrap() == "--summarize" {
+        return summarize().await;
+    }
     let config_file = env::args().nth(1).expect("missing file argument");
     let config = get_config(&config_file)?;
 
@@ -120,7 +126,9 @@ async fn main_main() -> Result<()> {
 
     let mut iterations = Vec::new();
     for _ in 0..config.iterations {
-        iterations.push(run_iteration(&config, statsd_buf.clone()).await?);
+        iterations.push(MetricValue::Map(
+            run_iteration(&config, statsd_buf.clone()).await?,
+        ));
     }
     metrics.insert("iterations".into(), MetricValue::Arr(iterations));
 
