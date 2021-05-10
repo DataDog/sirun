@@ -117,6 +117,22 @@ This will output something like the following.
 {"version":"123abc","name":"test_some_stuff",iterations:[{"user.time":6389.0,"system.time":8737.0,"udp.data":50.0,"max.res.size":2240512.0}]}
 ```
 
+### Summaries
+
+If you provide the `--summarize` option, `sirun` will switch to summary mode. In
+summary mode, it will read from `stdin`, expecting line-by-line of output from
+previous sirun runs. It will then aggregate them by test name and variant, and
+provide summary statistics over iterations. The output is pretty-printed JSON.
+
+E.g.
+
+```bash
+$ sirun foo-test.json >> results.ndjson
+$ sirun bar-test.json >> results.ndjson
+$ sirun baz-test.json >> results.ndjson
+$ cat results.ndjson | sirun --summarize > summary.json
+```
+
 ## License
 
 Licensed under either of
