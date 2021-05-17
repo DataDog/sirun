@@ -11,7 +11,7 @@ use async_std::{
     task::{sleep, spawn},
 };
 use serde_json::json;
-use std::{collections::HashMap, env, process::exit};
+use std::{collections::HashMap, env, os::unix::process::ExitStatusExt, process::exit};
 use which::which;
 
 mod config;
@@ -58,10 +58,19 @@ async fn run_test(config: &Config, mut metrics: &mut HashMap<String, MetricValue
     let duration = start_time.elapsed().as_micros();
     let rusage_result = Rusage::new() - rusage_start;
     metrics.insert("wall.time".to_owned(), (duration as f64).into());
-    let status = status.code().expect("no exit code");
-    if status != 0 && status <= 128 {
-        eprintln!("Test exited with code {}, so aborting test.", status);
-        exit(status);
+    let maybe_code = status.code();
+    if let Some(code) = maybe_code {
+        if code != 0 && code <= 128 {
+            eprintln!("Test exited with code {}, so aborting test.", code);
+            exit(code);
+        }
+    } else {
+        let signal = status.signal().unwrap();
+        eprintln!(
+            "Test was terminated by signal {}, so aborting test.",
+            signal
+        );
+        exit(1);
     }
     get_kernel_metrics(duration as f64, rusage_result, &mut metrics);
     Ok(())
@@ -81,9 +90,13 @@ async fn run_iteration(
         &sub_config.env,
     )
     .await?;
-    let status = status.code().expect("no exit code");
-    if status != 0 && status <= 128 {
-        exit(status);
+    let maybe_code = status.code();
+    if let Some(code) = maybe_code {
+        if code != 0 && code <= 128 {
+            exit(code);
+        }
+    } else {
+        exit(1);
     }
     let metrics = get_statsd_metrics(statsd_buf).await?;
 
