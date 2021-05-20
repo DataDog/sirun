@@ -4,6 +4,7 @@ version = "0.1.7"
 authors = ["Bryan English <bryan.english@datadoghq.com>"]
 edition = "2018"
 license = "Apache-2.0 OR MIT"
+readme = "README.md"
 
 [profile.release]
 lto = true
