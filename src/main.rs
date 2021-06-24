@@ -71,11 +71,11 @@ async fn run_iteration(
     config: &Config,
     statsd_buf: Arc<RwLock<String>>,
 ) -> Result<HashMap<String, MetricValue>> {
-    run_setup(&config).await?;
-
     let mut sub_config: Config = config.clone();
     let json_config = serde_yaml::to_string(&config)?;
     sub_config.env.insert("SIRUN_ITERATION".into(), json_config);
+    run_setup(&sub_config).await?;
+
     let status = run_cmd(
         &env::args().take(1).collect::<Vec<String>>(),
         &sub_config.env,
