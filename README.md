@@ -1,12 +1,11 @@
 # sirun 🚨
-[![docs.rs](https://docs.rs/sirun/badge.svg)](https://docs.rs/sirun/latest/)
 
 `sirun` (pronounced like "siren") is a tool for taking basic perfomance
 measurements of a process covering its entire lifetime. It gets memory and
 timing information from the kernel and also allows
 [Statsd](https://github.com/statsd/statsd#usage) messages to be sent to
-`udp://localhost:8125` (in the future this will be configurable), and those will
-be included in the outputted metrics.
+`udp://localhost:$SIRUN_STATSD_PORT` (the port is assigned randomly by sirun),
+and those will be included in the outputted metrics.
 
 It's intended that this tool be used for shorter-running benchmarks, and not for
 long-lived processes that don't die without external interaction. You could
@@ -53,7 +52,7 @@ Create a JSON or YAML file with the following properties:
   command with arguments, but note that it will not use a shell as an
   intermediary process. Note that subprocesses will not be measured via the
   kernel, but they can still use Statsd. To send metrics to Statsd from inside
-  this process, send them to `udp://localhost:8125`.
+  this process, send them to `udp://localhost:$SIRUN_STATSD_PORT`.
 * **`setup`**: A command to run _before_ the test. Use this to ensure the
   availability of services, or retrieve some last-minute dependencies. This can
   be formatted the same way as `run`. It will be run repeatedly at 1 second
@@ -101,7 +100,7 @@ single metric (with name `udp.data` and value 50) via Statsd. It times out after
 ```js
 {
   "setup": "curl -I http://www.google.com -o /dev/null",
-  "run": "bash -c \"echo udp.data:50\\|g > /dev/udp/127.0.0.1/8125\"",
+  "run": "bash -c \"echo udp.data:50\\|g > /dev/udp/127.0.0.1/$SIRUN_STATSD_PORT\"",
   "timeout": 4
 }
 ```

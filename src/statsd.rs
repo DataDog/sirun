@@ -4,17 +4,15 @@ use async_std::{
     net::UdpSocket,
     sync::{Arc, Barrier, RwLock},
 };
-use std::collections::HashMap;
+use std::{collections::HashMap, env::set_var};
 
 pub(crate) async fn statsd_listener(
     barrier: Arc<Barrier>,
     statsd_buf: Arc<RwLock<String>>,
 ) -> Result<()> {
-    let socket = UdpSocket::bind("127.0.0.1:8125").await;
-    let socket = match socket {
-        Ok(s) => s,
-        Err(error) => panic!("Cannot bind to 127.0.0.1:8125: {}", error),
-    };
+    let socket = UdpSocket::bind("127.0.0.1:0").await?;
+    let port = socket.local_addr()?.port();
+    set_var("SIRUN_STATSD_PORT", format!("{}", port));
     barrier.wait().await; // indicates to main task that socket is listening
 
     loop {
