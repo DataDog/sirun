@@ -4,8 +4,9 @@
 measurements of a process covering its entire lifetime. It gets memory and
 timing information from the kernel and also allows
 [Statsd](https://github.com/statsd/statsd#usage) messages to be sent to
-`udp://localhost:$SIRUN_STATSD_PORT` (the port is assigned randomly by sirun),
-and those will be included in the outputted metrics.
+`udp://localhost:$SIRUN_STATSD_PORT` (the port is assigned randomly by sirun,
+but you can also set it yourself), and those will be included in the outputted
+metrics.
 
 It's intended that this tool be used for shorter-running benchmarks, and not for
 long-lived processes that don't die without external interaction. You could
@@ -89,6 +90,10 @@ Create a JSON or YAML file with the following properties:
   `variants` property exists in the config JSON/YAML, and this variable is not
   set, then _all_ variants will be run, one-by-one, each having its own line of
   output JSON.
+* **`SIRUN_STATSD_PORT`**: The UDP port on localhost to use for Statsd
+  communication between tested processes and sirun. By default a random port
+  will be assigned. You should read this variable from tested programs to
+  determine which port to send data to.
 
 ### Example
 

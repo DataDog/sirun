@@ -1,0 +1,4 @@
+{
+  "setup": "echo a setup was run",
+  "run": "bash -c \"echo udp.data:$SIRUN_STATSD_PORT\\|g > /dev/udp/127.0.0.1/$SIRUN_STATSD_PORT\""
+}
