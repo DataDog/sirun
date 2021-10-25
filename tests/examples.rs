@@ -278,3 +278,14 @@ fn summarize() {
         .output()
         .expect(&std::fs::read_to_string(out_path).unwrap());
 }
+
+#[test]
+#[serial]
+fn assigned_port() {
+    run!("./examples/assigned-port.json")
+        .env("SIRUN_STATSD_PORT", "8125")
+        .env("SIRUN_NO_STDIO", "1")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("\"udp.data\":8125"));
+}
