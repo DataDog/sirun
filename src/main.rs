@@ -209,7 +209,8 @@ async fn iteration_main() -> Result<()> {
         metrics.remove("cpu.pct.wall.time").unwrap().as_f64()
         );
     let sock = UdpSocket::bind("127.0.0.1:0").await?;
-    sock.send_to(buf.as_bytes(), "127.0.0.1:8125").await?;
+    let statsd_addr = format!("127.0.0.1:{}", env::var("SIRUN_STATSD_PORT")?);
+    sock.send_to(buf.as_bytes(), statsd_addr).await?;
     Ok(())
 }
 
