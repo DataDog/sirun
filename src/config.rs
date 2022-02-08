@@ -6,8 +6,9 @@
 use anyhow::*;
 use lazy_static::lazy_static;
 use serde::{Deserialize, Serialize};
-use serde_yaml::{from_str, Mapping, Value};
+use serde_yaml::{from_str, to_string, Mapping, Value};
 use std::convert::{TryFrom, TryInto};
+use std::fmt;
 use std::{collections::HashMap, env, fs::read_to_string};
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -22,6 +23,12 @@ pub(crate) struct Config {
     pub(crate) cachegrind: bool,
     pub(crate) iterations: u64,
     pub(crate) variants: Option<Vec<String>>,
+}
+
+impl fmt::Display for Config {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", to_string(self).unwrap())
+    }
 }
 
 struct ProtoConfig {

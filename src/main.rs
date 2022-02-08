@@ -11,7 +11,7 @@ use async_std::{
     task::{sleep, spawn},
 };
 use serde_json::json;
-use std::{collections::HashMap, env, process::exit};
+use std::{collections::HashMap, env, os::unix::process::ExitStatusExt, process::exit};
 use which::which;
 
 mod config;
@@ -58,10 +58,22 @@ async fn run_test(config: &Config, mut metrics: &mut HashMap<String, MetricValue
     let duration = start_time.elapsed().as_micros();
     let rusage_result = Rusage::new() - rusage_start;
     metrics.insert("wall.time".to_owned(), (duration as f64).into());
-    let status = status.code().expect("no exit code");
-    if status != 0 && status <= 128 {
-        eprintln!("Test exited with code {}, so aborting test.", status);
-        exit(status);
+    if let Some(status) = status.code() {
+        if status != 0 && status <= 128 {
+            eprintln!(
+                "Test exited with code {}, so aborting test.\n\nTest Config:\n{}",
+                status, config
+            );
+            exit(status);
+        }
+    } else {
+        if let Some(status) = status.signal() {
+            eprintln!(
+                "Test was terminated via signal {}, so aborting test.\n\nTest Config:\n{}",
+                status, config
+            );
+            exit(1);
+        }
     }
     get_kernel_metrics(duration as f64, rusage_result, &mut metrics);
     Ok(())
