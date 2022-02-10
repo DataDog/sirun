@@ -3,7 +3,7 @@ use async_std::{
     process::{Command, ExitStatus, Stdio},
     task::sleep,
 };
-use std::{collections::HashMap, env, time::Duration};
+use std::{collections::HashMap, env, os::unix::process::ExitStatusExt, time::Duration};
 
 use crate::config::*;
 
@@ -27,13 +27,21 @@ async fn run_setup_or_teardown(typ: &str, config: &Config) -> Result<()> {
         if attempts == 100 {
             bail!("{} script did not complete successfully. aborting.", typ);
         }
-        code = run_cmd(command_arr, env)
-            .await?
-            .code()
-            .expect("no exit code");
-        if code != 0 {
-            sleep(Duration::from_secs(1)).await;
-            attempts += 1;
+        let status = run_cmd(command_arr, env).await?;
+        let maybe_code = status.code();
+        if let Some(maybe_code) = maybe_code {
+            code = maybe_code;
+            if code != 0 {
+                sleep(Duration::from_secs(1)).await;
+                attempts += 1;
+            }
+        } else {
+            let signal = status.signal().unwrap();
+            bail!(
+                "{} script was terminated by signal {}. aborting.",
+                typ,
+                signal
+            );
         }
     }
 
