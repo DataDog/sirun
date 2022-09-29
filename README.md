@@ -191,7 +191,7 @@ Here's an example of one of these lines of output, though whitespace has been ad
   - **`system.time`**: Microsecond (μs) amount of time spent in kernel code
   - **`user.time`**: Microsecond (μs) amount of time spent in application code
   - **`wall.time`**: Microsecond (μs) amount of time the overall iteration took
-  - **`cpu.pct.wall.time`**: Percentage (%) of time where the program was waiting (not system or user time)
+  - **`cpu.pct.wall.time`**: Percentage (%) of time where the program was not waiting (`(user + system) / wall`)
 
 The listed statsd metrics in this list are automatically created for you by Sirun.
 Your application is free to emit other metrics as well.
