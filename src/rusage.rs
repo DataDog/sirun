@@ -9,10 +9,10 @@ pub(crate) struct Rusage {
     pub(crate) max_res_size: f64,
 }
 
-fn ms_from_timeval(tv: timeval) -> f64 {
+fn μs_from_timeval(tv: timeval) -> f64 {
     let seconds = tv.tv_sec;
-    let ms = tv.tv_usec as i64;
-    let val = seconds * 1000000 + ms;
+    let μs = tv.tv_usec as i64;
+    let val = seconds * 1000000 + μs;
     val as f64
 }
 
@@ -27,8 +27,8 @@ impl Rusage {
         };
 
         Rusage {
-            user_time: ms_from_timeval(data.ru_utime) as f64,
-            system_time: ms_from_timeval(data.ru_stime) as f64,
+            user_time: μs_from_timeval(data.ru_utime) as f64,
+            system_time: μs_from_timeval(data.ru_stime) as f64,
             max_res_size: data.ru_maxrss as f64,
         }
     }

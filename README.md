@@ -102,11 +102,26 @@ connectivity to Google. The `run` script doesn't do much, but it does send a
 single metric (with name `udp.data` and value 50) via Statsd. It times out after
 4 seconds, and we're not likely to reach that point.
 
+There are two variants of this test, one named `control` and the other `with-tracer`.
+The variants set environment variables, though the `run` script doesn't really care
+about the variable. Since there are 3 iterations and 2 variants the `run` command will
+run a total of 6 times.
+
 ```js
 {
+  "name": "foobar",
   "setup": "curl -I http://www.google.com -o /dev/null",
   "run": "bash -c \"echo udp.data:50\\|g > /dev/udp/127.0.0.1/$SIRUN_STATSD_PORT\"",
-  "timeout": 4
+  "timeout": 4,
+  "iterations": 3,
+  "variants": {
+    "control": {
+      "env": { "USE_TRACER": "0" }
+    },
+    "with-tracer": {
+      "env": { "USE_TRACER": "1" }
+    }
+  }
 }
 ```
 
@@ -142,6 +157,45 @@ $ sirun bar-test.json >> results.ndjson
 $ sirun baz-test.json >> results.ndjson
 $ cat results.ndjson | sirun --summarize > summary.json
 ```
+
+Each line of output in one of these `.ndjson` files is a complete JSON document.
+Here's an example of one of these lines of output, though whitespace has been added for readability:
+
+```json
+{
+    "name": "foobar",
+    "variant": "with-baz",
+    "iterations": [
+        {
+            "cpu.pct.wall.time": 18.138587328535383,
+            "max.res.size": 66956,
+            "system.time": 766091,
+            "user.time": 1552557,
+            "wall.time": 12782958
+        },
+        {
+            "cpu.pct.wall.time": 18.029851850045276,
+            "max.res.size": 66480,
+            "system.time": 720491,
+            "user.time": 1571242,
+            "wall.time": 12710770
+        }
+    ]
+}
+```
+
+- **`name`**: This is the same `name` value from the configuration file.
+- **`variant`**: This is the object key from the configuration file's `variations` list.
+- **`iterations`**: These are the statsd metrics from different runs and contain raw data
+  - **`max.res.size`**: Bytes (B) maximum Resident Set Size (RSS), aka the highest RAM usage
+  - **`system.time`**: Microsecond (μs) amount of time spent in kernel code
+  - **`user.time`**: Microsecond (μs) amount of time spent in application code
+  - **`wall.time`**: Microsecond (μs) amount of time the overall iteration took
+  - **`cpu.pct.wall.time`**: Percentage (%) of time where the program was not waiting (`(user + system) / wall`)
+
+The listed statsd metrics in this list are automatically created for you by Sirun.
+Your application is free to emit other metrics as well.
+Those additional metrics will also be provided in the output.
 
 ## License
 
