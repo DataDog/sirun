@@ -22,6 +22,7 @@ pub(crate) struct Config {
     pub(crate) env: HashMap<String, String>,
     pub(crate) cachegrind: bool,
     pub(crate) iterations: u64,
+    pub(crate) instructions: bool,
     pub(crate) variants: Option<Vec<String>>,
 }
 
@@ -40,6 +41,7 @@ struct ProtoConfig {
     timeout: Option<u64>,
     env: HashMap<String, String>,
     cachegrind: bool,
+    instructions: bool,
     iterations: u64,
     variants: Option<Vec<String>>,
 }
@@ -61,6 +63,7 @@ impl TryFrom<ProtoConfig> for Config {
             env: config.env,
             cachegrind: config.cachegrind,
             iterations: config.iterations,
+            instructions: config.instructions,
             variants: config.variants,
         })
     }
@@ -105,6 +108,7 @@ lazy_static! {
     static ref TIMEOUT_KEY: Value = "timeout".into();
     static ref CACHEGRIND_KEY: Value = "cachegrind".into();
     static ref ITERATIONS_KEY: Value = "iterations".into();
+    static ref INSTRUCTIONS_KEY: Value = "instructions".into();
 }
 
 fn apply_config(config: &mut ProtoConfig, config_val: &Value) -> Result<()> {
@@ -156,6 +160,12 @@ fn apply_config(config: &mut ProtoConfig, config_val: &Value) -> Result<()> {
         ensure!(config.iterations > 0, "iterations must be an integer >=1");
     }
 
+    if let Some(instructions_val) = config_val.get(&INSTRUCTIONS_KEY) {
+        config.instructions = instructions_val
+            .as_bool()
+            .ok_or_else(|| anyhow!("'instructions' must be a boolean"))?;
+    }
+
     if let Some(env) = config_val.get(&"env".to_owned().into()) {
         get_env(&mut config.env, &env)?;
     }
@@ -172,6 +182,7 @@ pub(crate) fn get_config(filename: &str) -> Result<Config> {
         timeout: None,
         env: HashMap::new(),
         cachegrind: false,
+        instructions: false,
         iterations: 1,
         variants: None,
     };
