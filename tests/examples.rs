@@ -289,3 +289,18 @@ fn assigned_port() {
         .success()
         .stdout(predicate::str::contains("\"udp.data\":8125"));
 }
+
+#[test]
+#[serial]
+#[cfg(target_os = "linux")]
+fn insctrution_counts() {
+    if caps::has_cap(None, caps::CapSet::Permitted, caps::Capability::CAP_SYS_PTRACE).unwrap() {
+        json_has!("./examples/instructions.json", move |map: &serde_yaml::Mapping| {
+            let count = map.get(&"instructions".into())
+                .unwrap()
+                .as_f64()
+                .unwrap();
+            count > 0.0
+        });
+    }
+}

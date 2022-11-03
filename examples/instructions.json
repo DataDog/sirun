@@ -1,0 +1,4 @@
+{
+  "run": "bash -c 'sleep 1'",
+  "instructions": true
+}

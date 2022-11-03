@@ -1,6 +1,6 @@
 use anyhow::*;
 use async_std::{
-    process::{Command, ExitStatus, Stdio},
+    process::{Command, Child, Stdio},
     task::sleep,
 };
 use std::{collections::HashMap, env, os::unix::process::ExitStatusExt, time::Duration};
@@ -27,7 +27,8 @@ async fn run_setup_or_teardown(typ: &str, config: &Config) -> Result<()> {
         if attempts == 100 {
             bail!("{} script did not complete successfully. aborting.", typ);
         }
-        let status = run_cmd(command_arr, env).await?;
+        let mut child = run_cmd(command_arr, env)?;
+        let status = child.status().await?;
         let maybe_code = status.code();
         if let Some(maybe_code) = maybe_code {
             code = maybe_code;
@@ -63,10 +64,10 @@ fn get_stdio() -> Stdio {
     }
 }
 
-pub(crate) async fn run_cmd(
+pub(crate) fn run_cmd(
     command_arr: &[String],
     env: &HashMap<String, String>,
-) -> Result<ExitStatus> {
+) -> Result<Child> {
     let command = command_arr[0].clone();
     let args = command_arr.iter().skip(1);
     Command::new(command)
@@ -74,7 +75,6 @@ pub(crate) async fn run_cmd(
         .envs(env.clone())
         .stdout(get_stdio())
         .stderr(get_stdio())
-        .status()
-        .await
+        .spawn()
         .map_err(|e| e.into())
 }

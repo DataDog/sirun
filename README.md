@@ -74,6 +74,10 @@ Create a JSON or YAML file with the following properties:
   JSON. Will only happen once, and be inserted into the top level JSON,
   regardless of `iterations`. This requires that `valgrind` is installed on your
   system.
+* **`instructions`**: If set to `true`, will take instruction counts from
+  hardware counters if available, adding the result under the key
+  `instructions`, for each iteration. This is only available on Linux with
+  `CAP_SYS_PTRACE`.
 * **`variants`**: An array or object whose values are config objects, whose
   properties may be any of the properties above. It's not recommended to include
   `name` in a variant. The variant name (if `variants` is an object) or index

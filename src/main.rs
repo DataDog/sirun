@@ -6,7 +6,7 @@
 use anyhow::*;
 use async_std::{
     net::UdpSocket,
-    process::{Command, Stdio},
+    process::{Command, Stdio, Child, ExitStatus},
     sync::{Arc, Barrier, RwLock},
     task::{sleep, spawn},
 };
@@ -47,6 +47,31 @@ async fn test_timeout(timeout: u64) {
     exit(1);
 }
 
+#[cfg(target_os = "linux")]
+async fn run_with_instruction_count(child: &mut Child, config: &Config) -> Result<(ExitStatus, Option<u64>)> {
+    use perfcnt::AbstractPerfCounter;
+    use perfcnt::linux::{PerfCounterBuilderLinux, HardwareEventType};
+    if config.instructions {
+        let pid = child.id();
+        let mut counter = PerfCounterBuilderLinux::from_hardware_event(HardwareEventType::Instructions)
+            .for_pid(pid as i32)
+            .finish()?;
+        counter.start()?;
+        let status = child.status().await?;
+        counter.stop()?;
+        let instructions = counter.read()?;
+
+        Ok((status, Some(instructions)))
+    } else {
+        Ok((child.status().await?, None))
+    }
+}
+
+#[cfg(not(target_os = "linux"))]
+async fn run_with_instruction_count(child: &mut Child, _config: &Config) -> Result<(ExitStatus, Option<u64>)> {
+    Ok((child.status().await?, None))
+}
+
 async fn run_test(config: &Config, mut metrics: &mut HashMap<String, MetricValue>) -> Result<()> {
     if let Some(timeout) = config.timeout {
         spawn(test_timeout(timeout));
@@ -54,10 +79,14 @@ async fn run_test(config: &Config, mut metrics: &mut HashMap<String, MetricValue
 
     let start_time = std::time::Instant::now();
     let rusage_start = Rusage::new();
-    let status = run_cmd(&config.run, &config.env).await?;
+    let mut child = run_cmd(&config.run, &config.env)?;
+    let (status, instructions) = run_with_instruction_count(&mut child, config).await?;
     let duration = start_time.elapsed().as_micros();
-    let rusage_result = Rusage::new() - rusage_start;
     metrics.insert("wall.time".to_owned(), (duration as f64).into());
+    let rusage_result = Rusage::new() - rusage_start;
+    if let Some(instructions) = instructions {
+        metrics.insert("instructions".to_owned(), (instructions as f64).into());
+    }
     if let Some(status) = status.code() {
         if status != 0 && status <= 128 {
             eprintln!(
@@ -87,12 +116,11 @@ async fn run_iteration(
     let json_config = serde_yaml::to_string(&config)?;
     sub_config.env.insert("SIRUN_ITERATION".into(), json_config);
     run_setup(&sub_config).await?;
-
-    let status = run_cmd(
+    let mut child = run_cmd(
         &env::args().take(1).collect::<Vec<String>>(),
         &sub_config.env,
-    )
-    .await?;
+    )?;
+    let status = child.status().await?;
     let status = status.code().expect("no exit code");
     if status != 0 && status <= 128 {
         exit(status);
@@ -222,7 +250,10 @@ async fn iteration_main() -> Result<()> {
         );
     let sock = UdpSocket::bind("127.0.0.1:0").await?;
     let statsd_addr = format!("127.0.0.1:{}", env::var("SIRUN_STATSD_PORT")?);
-    sock.send_to(buf.as_bytes(), statsd_addr).await?;
+    sock.send_to(buf.as_bytes(), &statsd_addr).await?;
+    if let Some(instructions) = metrics.remove("instructions") {
+        sock.send_to(format!("instructions:{}|g\n", instructions.as_f64()).as_bytes(), &statsd_addr).await?;
+    }
     Ok(())
 }
 
