@@ -1,5 +1,5 @@
 {
-  "service": "python -m http.server --bind 127.0.0.1",
+  "service": "python3 -m http.server --bind 127.0.0.1",
   "setup": "curl http://127.0.0.1:8000",
   "run": "curl http://127.0.0.1:8000",
   "iterations": 3
