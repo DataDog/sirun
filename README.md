@@ -54,6 +54,12 @@ Create a JSON or YAML file with the following properties:
   intermediary process. Note that subprocesses will not be measured via the
   kernel, but they can still use Statsd. To send metrics to Statsd from inside
   this process, send them to `udp://localhost:$SIRUN_STATSD_PORT`.
+* **`service`**: A command to start a process to be run alongside your test
+  process. This is for, for example, running a web service for your program to
+  call out to, or a load-generating tool for your program. It should generally
+  be used in conjunction with `setup`, which can be used to determine whether
+  the `service` process is ready. There is no retry logic. After the test run
+  has completed, the process will be sent a SIGKILL.
 * **`setup`**: A command to run _before_ the test. Use this to ensure the
   availability of services, or retrieve some last-minute dependencies. This can
   be formatted the same way as `run`. It will be run repeatedly at 1 second

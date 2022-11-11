@@ -108,6 +108,13 @@ async fn run_test(config: &Config, mut metrics: &mut HashMap<String, MetricValue
     Ok(())
 }
 
+fn run_service(config: &Config) -> Result<Option<Child>> {
+    Ok(match &config.service {
+        Some(command_arr) => Some(run_cmd(command_arr, &config.env)?),
+        None => None,
+    })
+}
+
 async fn run_iteration(
     config: &Config,
     statsd_buf: Arc<RwLock<String>>,
@@ -115,6 +122,7 @@ async fn run_iteration(
     let mut sub_config: Config = config.clone();
     let json_config = serde_yaml::to_string(&config)?;
     sub_config.env.insert("SIRUN_ITERATION".into(), json_config);
+    let service = run_service(&sub_config)?;
     run_setup(&sub_config).await?;
     let mut child = run_cmd(
         &env::args().take(1).collect::<Vec<String>>(),
@@ -128,6 +136,9 @@ async fn run_iteration(
     let metrics = get_statsd_metrics(statsd_buf).await?;
 
     run_teardown(&config).await?;
+    if let Some(mut service) = service {
+        service.kill()?;
+    }
 
     Ok(metrics)
 }

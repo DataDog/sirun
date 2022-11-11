@@ -15,6 +15,7 @@ use std::{collections::HashMap, env, fs::read_to_string};
 pub(crate) struct Config {
     pub(crate) name: Option<String>,
     pub(crate) variant: Option<String>,
+    pub(crate) service: Option<Vec<String>>,
     pub(crate) setup: Option<Vec<String>>,
     pub(crate) teardown: Option<Vec<String>>,
     pub(crate) run: Vec<String>,
@@ -35,6 +36,7 @@ impl fmt::Display for Config {
 struct ProtoConfig {
     name: Option<String>,
     variant: Option<String>,
+    service: Option<Vec<String>>,
     setup: Option<Vec<String>>,
     teardown: Option<Vec<String>>,
     run: Option<Vec<String>>,
@@ -53,6 +55,7 @@ impl TryFrom<ProtoConfig> for Config {
         Ok(Config {
             name: config.name,
             variant: config.variant,
+            service: config.service,
             setup: config.setup,
             teardown: config.teardown,
             run: match config.run {
@@ -103,6 +106,7 @@ fn get_env(env: &mut HashMap<String, String>, config_env: &Value) -> Result<()> 
 lazy_static! {
     static ref NAME_KEY: Value = "name".into();
     static ref RUN_KEY: Value = "run".into();
+    static ref SERVICE_KEY: Value = "service".into();
     static ref SETUP_KEY: Value = "setup".into();
     static ref TEARDOWN_KEY: Value = "teardown".into();
     static ref TIMEOUT_KEY: Value = "timeout".into();
@@ -125,6 +129,10 @@ fn apply_config(config: &mut ProtoConfig, config_val: &Value) -> Result<()> {
                 .ok_or_else(|| anyhow!("'name' must be a string"))?
                 .to_owned(),
         );
+    }
+
+    if config_val.contains_key(&SERVICE_KEY) {
+        config.service = Some(get_shell_command(config_val, &SERVICE_KEY)?);
     }
 
     if config_val.contains_key(&RUN_KEY) {
@@ -176,6 +184,7 @@ pub(crate) fn get_config(filename: &str) -> Result<Config> {
     let mut config = ProtoConfig {
         name: None,
         variant: None,
+        service: None,
         setup: None,
         teardown: None,
         run: None,

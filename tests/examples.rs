@@ -304,3 +304,9 @@ fn insctrution_counts() {
         });
     }
 }
+
+#[test]
+#[serial]
+fn service() {
+    run!("./examples/service.json").assert().success();
+}
