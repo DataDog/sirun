@@ -7,7 +7,6 @@ use anyhow::*;
 use lazy_static::lazy_static;
 use serde::{Deserialize, Serialize};
 use serde_yaml::{from_str, to_string, Mapping, Value};
-use std::convert::{TryFrom, TryInto};
 use std::fmt;
 use std::{collections::HashMap, env, fs::read_to_string};
 
@@ -30,45 +29,6 @@ pub(crate) struct Config {
 impl fmt::Display for Config {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}", to_string(self).unwrap())
-    }
-}
-
-struct ProtoConfig {
-    name: Option<String>,
-    variant: Option<String>,
-    service: Option<Vec<String>>,
-    setup: Option<Vec<String>>,
-    teardown: Option<Vec<String>>,
-    run: Option<Vec<String>>,
-    timeout: Option<u64>,
-    env: HashMap<String, String>,
-    cachegrind: bool,
-    instructions: bool,
-    iterations: u64,
-    variants: Option<Vec<String>>,
-}
-
-impl TryFrom<ProtoConfig> for Config {
-    type Error = Error;
-
-    fn try_from(config: ProtoConfig) -> Result<Config> {
-        Ok(Config {
-            name: config.name,
-            variant: config.variant,
-            service: config.service,
-            setup: config.setup,
-            teardown: config.teardown,
-            run: match config.run {
-                Some(run) => run,
-                None => bail!("'run' must be provided"),
-            },
-            timeout: config.timeout,
-            env: config.env,
-            cachegrind: config.cachegrind,
-            iterations: config.iterations,
-            instructions: config.instructions,
-            variants: config.variants,
-        })
     }
 }
 
@@ -115,7 +75,7 @@ lazy_static! {
     static ref INSTRUCTIONS_KEY: Value = "instructions".into();
 }
 
-fn apply_config(config: &mut ProtoConfig, config_val: &Value) -> Result<()> {
+fn apply_config(config: &mut Config, config_val: &Value) -> Result<()> {
     let config_val = config_val
         .as_mapping()
         .ok_or_else(|| anyhow!("invalid json"))?;
@@ -136,7 +96,7 @@ fn apply_config(config: &mut ProtoConfig, config_val: &Value) -> Result<()> {
     }
 
     if config_val.contains_key(&RUN_KEY) {
-        config.run = Some(get_shell_command(config_val, &RUN_KEY)?);
+        config.run = get_shell_command(config_val, &RUN_KEY)?;
     }
 
     if config_val.contains_key(&SETUP_KEY) {
@@ -181,13 +141,13 @@ fn apply_config(config: &mut ProtoConfig, config_val: &Value) -> Result<()> {
 }
 
 pub(crate) fn get_config(filename: &str) -> Result<Config> {
-    let mut config = ProtoConfig {
+    let mut config = Config {
         name: None,
         variant: None,
         service: None,
         setup: None,
         teardown: None,
-        run: None,
+        run: vec!["INIT".into()],
         timeout: None,
         env: HashMap::new(),
         cachegrind: false,
@@ -207,7 +167,7 @@ pub(crate) fn get_config(filename: &str) -> Result<Config> {
                 if let Some(variants) = variants.as_sequence() {
                     let usize_ids: Vec<usize> = (0..variants.len()).collect();
                     config.variants = Some(usize_ids.iter().map(|i| i.to_string()).collect());
-                    return config.try_into();
+                    return Ok(config);
                 } else if let Some(variants) = variants.as_mapping() {
                     config.variants = Some(
                         variants
@@ -215,7 +175,7 @@ pub(crate) fn get_config(filename: &str) -> Result<Config> {
                             .map(|(k, _v)| k.as_str().unwrap().to_owned())
                             .collect(),
                     );
-                    return config.try_into();
+                    return Ok(config);
                 } else {
                     bail!("variants must be an array or object");
                 }
@@ -242,5 +202,9 @@ pub(crate) fn get_config(filename: &str) -> Result<Config> {
         apply_config(&mut config, &config_json)?;
     }
 
-    config.try_into()
+    if config.run.concat() == "INIT" {
+        bail!("'run' must be provided");
+    }
+
+    Ok(config)
 }
