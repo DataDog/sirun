@@ -1,6 +1,6 @@
 {
   "service": "python -m http.server",
-  "setup": "curl localhost:8000",
-  "run": "curl localhost:8000",
+  "setup": "curl http://[::]:8000",
+  "run": "curl http://[::]:8000",
   "iterations": 3
 }
