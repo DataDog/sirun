@@ -197,7 +197,7 @@ Here's an example of one of these lines of output, though whitespace has been ad
 - **`name`**: This is the same `name` value from the configuration file.
 - **`variant`**: This is the object key from the configuration file's `variations` list.
 - **`iterations`**: These are the statsd metrics from different runs and contain raw data
-  - **`max.res.size`**: Bytes (B) maximum Resident Set Size (RSS), aka the highest RAM usage
+  - **`max.res.size`**: Kilobytes (KiB) maximum Resident Set Size (RSS), aka the highest RAM usage
   - **`system.time`**: Microsecond (μs) amount of time spent in kernel code
   - **`user.time`**: Microsecond (μs) amount of time spent in application code
   - **`wall.time`**: Microsecond (μs) amount of time the overall iteration took
