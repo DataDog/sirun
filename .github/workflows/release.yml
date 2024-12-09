@@ -16,9 +16,11 @@ jobs:
       matrix:
         include:
           - target: x86_64-unknown-linux-gnu
-          - target: x86_64-apple-darwin
-            os: macos-latest
           - target: x86_64-unknown-linux-musl
+          - target: x86_64-apple-darwin
+            os: macos-latest-large
+          - target: aarch64-apple-darwin
+            os: macos-latest
     runs-on: ${{ matrix.os || 'ubuntu-latest'}}
     steps:
       - uses: actions/checkout@v2
