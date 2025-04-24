@@ -13,6 +13,7 @@ use async_std::{
 use serde_json::json;
 use std::{collections::HashMap, env, os::unix::process::ExitStatusExt, process::exit};
 use which::which;
+use indexmap::IndexMap;
 
 mod config;
 use config::*;
@@ -118,7 +119,7 @@ fn run_service(config: &Config) -> Result<Option<Child>> {
 async fn run_iteration(
     config: &Config,
     statsd_buf: Arc<RwLock<String>>,
-) -> Result<HashMap<String, MetricValue>> {
+) -> Result<IndexMap<String, MetricValue>> {
     let mut sub_config: Config = config.clone();
     let json_config = serde_yaml::to_string(&config)?;
     sub_config.env.insert("SIRUN_ITERATION".into(), json_config);
