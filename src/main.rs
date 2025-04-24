@@ -190,46 +190,6 @@ async fn main_main() -> Result<()> {
     }
     metrics.insert("iterations".into(), MetricValue::Arr(iterations));
 
-    if config.cachegrind && which("valgrind").is_ok() {
-        let command = "valgrind";
-        let mut args = vec![
-            "--tool=cachegrind".to_owned(),
-            "--trace-children=yes".to_owned(),
-            // Set some reasonable L1 and LL values. It is important that these
-            // values are consistent across runs, instead of the default.
-            "--I1=32768,8,64".to_owned(),
-            "--D1=32768,8,64".to_owned(),
-            "--LL=8388608,16,64".to_owned(),
-        ];
-        args.append(&mut config.run.clone());
-        run_setup(&config).await?;
-        let output = Command::new(command)
-            .args(args)
-            .envs(&config.env)
-            .output()
-            .await?;
-        run_teardown(&config).await?;
-        let stderr = String::from_utf8_lossy(&output.stderr);
-
-        let lines = stderr.trim().lines().filter(|x| x.contains("I   refs:"));
-        let mut instructions: f64 = 0.0;
-        for line in lines {
-            instructions += line
-                .trim()
-                .split_whitespace()
-                .last()
-                .expect("Bad cachegrind output: invalid instruction ref line")
-                .replace(",", "")
-                .parse::<f64>()
-                .expect("Bad cachegrind output: invalid number");
-        }
-        if instructions <= 0.0 {
-            eprintln!("Bad cachegrind output: no instructions parsed");
-            exit(1);
-        }
-        metrics.insert("instructions".into(), instructions.into());
-    }
-
     if let Ok(hash) = env::var("GIT_COMMIT_HASH") {
         metrics.insert("version".into(), hash.into());
     }

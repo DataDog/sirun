@@ -75,11 +75,6 @@ Create a JSON or YAML file with the following properties:
 * **`iterations`**: The number of times to run the the `run` test. The results
   for each iteration will be in an `iterations` array in the resultant JSON. The
   default is 1.
-* **`cachegrind`**: If set to `true`, will run the test (after having already
-  run it normally) using cachegrind to add an instruction count to the results
-  JSON. Will only happen once, and be inserted into the top level JSON,
-  regardless of `iterations`. This requires that `valgrind` is installed on your
-  system.
 * **`instructions`**: If set to `true`, will take instruction counts from
   hardware counters if available, adding the result under the key
   `instructions`, for each iteration. This is only available on Linux with

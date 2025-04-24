@@ -20,7 +20,6 @@ pub(crate) struct Config {
     pub(crate) run: Vec<String>,
     pub(crate) timeout: Option<u64>,
     pub(crate) env: HashMap<String, String>,
-    pub(crate) cachegrind: bool,
     pub(crate) iterations: u64,
     pub(crate) instructions: bool,
     pub(crate) variants: Option<Vec<String>>,
@@ -70,7 +69,6 @@ lazy_static! {
     static ref SETUP_KEY: Value = "setup".into();
     static ref TEARDOWN_KEY: Value = "teardown".into();
     static ref TIMEOUT_KEY: Value = "timeout".into();
-    static ref CACHEGRIND_KEY: Value = "cachegrind".into();
     static ref ITERATIONS_KEY: Value = "iterations".into();
     static ref INSTRUCTIONS_KEY: Value = "instructions".into();
 }
@@ -115,12 +113,6 @@ fn apply_config(config: &mut Config, config_val: &Value) -> Result<()> {
         );
     }
 
-    if let Some(cachegrind_val) = config_val.get(&CACHEGRIND_KEY) {
-        config.cachegrind = cachegrind_val
-            .as_bool()
-            .ok_or_else(|| anyhow!("'cachegrind' must be a boolean"))?;
-    }
-
     if let Some(iterations_val) = config_val.get(&ITERATIONS_KEY) {
         config.iterations = iterations_val
             .as_u64()
@@ -150,7 +142,6 @@ pub(crate) fn get_config(filename: &str) -> Result<Config> {
         run: vec!["INIT".into()],
         timeout: None,
         env: HashMap::new(),
-        cachegrind: false,
         instructions: false,
         iterations: 1,
         variants: None,
