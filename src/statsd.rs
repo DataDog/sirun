@@ -4,7 +4,8 @@ use async_std::{
     net::UdpSocket,
     sync::{Arc, Barrier, RwLock},
 };
-use std::{collections::HashMap, env};
+use std::env;
+use indexmap::IndexMap;
 
 pub(crate) async fn statsd_listener(
     barrier: Arc<Barrier>,
@@ -32,8 +33,8 @@ pub(crate) async fn statsd_listener(
 
 pub(crate) async fn get_statsd_metrics(
     udp_data: Arc<RwLock<String>>,
-) -> Result<HashMap<String, MetricValue>> {
-    let mut metrics = HashMap::new();
+) -> Result<IndexMap<String, MetricValue>> {
+    let mut metrics = IndexMap::new();
     let udp_string = udp_data.read().await.clone();
     let lines = udp_string.trim().lines();
     udp_data.write().await.clear();

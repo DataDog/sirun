@@ -257,10 +257,13 @@ fn summarize() {
     in_path.push("tests/fixtures/summary/in.ndjson");
     let mut out_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     out_path.push("tests/fixtures/summary/out.json");
+    let expected_output: &str = &std::fs::read_to_string(out_path).unwrap();
+
     run!("--summarize")
         .write_stdin(std::fs::read(in_path).unwrap())
-        .output()
-        .expect(&std::fs::read_to_string(out_path).unwrap());
+        .assert()
+        .success()
+        .stdout(predicate::eq(expected_output));
 }
 
 #[test]

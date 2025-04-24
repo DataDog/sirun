@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use indexmap::IndexMap;
 
 #[derive(Serialize, Deserialize, Clone)]
 #[serde(untagged)]
@@ -72,4 +72,4 @@ num_type!(i32);
 num_type!(i64);
 num_type!(f64);
 
-pub(crate) type MetricMap = HashMap<String, MetricValue>;
+pub(crate) type MetricMap = IndexMap<String, MetricValue>;

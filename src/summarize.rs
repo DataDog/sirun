@@ -5,7 +5,7 @@
 
 use anyhow::*;
 use async_std::io;
-use std::collections::HashMap;
+use indexmap::IndexMap;
 
 use crate::metric_value::*;
 
@@ -26,7 +26,7 @@ fn stddev(m: f64, items: &[f64]) -> f64 {
 }
 
 fn summary(iterations: &[MetricValue]) -> MetricValue {
-    let mut stats: HashMap<String, Vec<f64>> = HashMap::new();
+    let mut stats: IndexMap<String, Vec<f64>> = IndexMap::new();
     for iteration in iterations {
         let iteration = iteration.as_map();
         for (k, v) in iteration {
@@ -40,9 +40,9 @@ fn summary(iterations: &[MetricValue]) -> MetricValue {
             stat.push(v.clone().as_f64());
         }
     }
-    let mut result = HashMap::new();
+    let mut result = IndexMap::new();
     for (name, items) in stats {
-        let mut statistics = HashMap::new();
+        let mut statistics = IndexMap::new();
         let m = mean(&items);
         let s = stddev(m, &items);
         statistics.insert("mean".to_owned(), m.into());
@@ -66,7 +66,7 @@ fn summary(iterations: &[MetricValue]) -> MetricValue {
 pub(crate) async fn summarize() -> Result<()> {
     let stdin = io::stdin();
     let mut line = String::new();
-    let mut result_data: MetricMap = HashMap::new();
+    let mut result_data: MetricMap = IndexMap::new();
     while stdin.read_line(&mut line).await? != 0 {
         if let Ok(mut json_data) = serde_json::from_str::<MetricMap>(&line) {
             let name = match json_data.get("name") {
@@ -76,7 +76,7 @@ pub(crate) async fn summarize() -> Result<()> {
                     continue;
                 }
             };
-            json_data.remove("name");
+            json_data.shift_remove("name");
             let variant = match json_data.get("variant") {
                 Some(variant) => variant.clone().as_string(),
                 None => {
@@ -84,22 +84,22 @@ pub(crate) async fn summarize() -> Result<()> {
                     continue;
                 }
             };
-            json_data.remove("variant");
+            json_data.shift_remove("variant");
             let name_data: &mut MetricMap = match result_data.get_mut(&name) {
                 Some(data) => data.as_map_mut(),
                 None => {
-                    result_data.insert(name.to_owned(), HashMap::new().into());
+                    result_data.insert(name.to_owned(), IndexMap::new().into());
                     result_data.get_mut(&name).unwrap().as_map_mut()
                 }
             };
 
-            if let Some((_, iterations)) = json_data.remove_entry("iterations") {
+            if let Some((_, iterations)) = json_data.shift_remove_entry("iterations") {
                 json_data.insert("summary".to_owned(), summary(&iterations.as_vec()));
             } else {
                 line = String::new();
                 continue;
             }
-            json_data.remove("iterations");
+            json_data.shift_remove("iterations");
             name_data.insert(variant, json_data.into());
         };
         line = String::new();
