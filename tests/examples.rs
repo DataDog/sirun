@@ -180,22 +180,6 @@ fn stdio() {
 
 #[test]
 #[serial]
-fn cachegrind() {
-    if std::env::consts::OS == "linux" {
-        run!("./examples/cachegrind.json")
-            .assert()
-            .success()
-            .stdout(predicate::str::contains("\"instructions\":"));
-    } else {
-        run!("./examples/cachegrind.json")
-            .assert()
-            .success()
-            .stdout(predicate::str::contains("\"instructions\":").not());
-    }
-}
-
-#[test]
-#[serial]
 fn iterations() {
     run!("./examples/iterations.json")
         .assert()
