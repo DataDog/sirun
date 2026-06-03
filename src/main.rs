@@ -80,7 +80,7 @@ async fn run_test(config: &Config, mut metrics: &mut HashMap<String, MetricValue
 
     let start_time = std::time::Instant::now();
     let rusage_start = Rusage::new();
-    let mut child = run_cmd(&config.run, &config.env)?;
+    let mut child = run_cmd(&config.run, &config.env, None)?;
     let (status, instructions) = run_with_instruction_count(&mut child, config).await?;
     let duration = start_time.elapsed().as_micros();
     metrics.insert("wall.time".to_owned(), (duration as f64).into());
@@ -111,7 +111,7 @@ async fn run_test(config: &Config, mut metrics: &mut HashMap<String, MetricValue
 
 fn run_service(config: &Config) -> Result<Option<Child>> {
     Ok(match &config.service {
-        Some(command_arr) => Some(run_cmd(command_arr, &config.env)?),
+        Some(command_arr) => Some(run_cmd(command_arr, &config.env, None)?),
         None => None,
     })
 }
@@ -128,6 +128,7 @@ async fn run_iteration(
     let mut child = run_cmd(
         &env::args().take(1).collect::<Vec<String>>(),
         &sub_config.env,
+        None,
     )?;
     let status = child.status().await?;
     let status = status.code().expect("no exit code");
