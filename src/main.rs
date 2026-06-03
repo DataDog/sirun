@@ -66,7 +66,6 @@ async fn wait_with_ready_signal(
     child: &mut Child,
     read_fd: RawFd,
     start_time: &mut std::time::Instant,
-    rusage_start: &mut Rusage,
 ) -> Result<ExitStatus> {
     let pipe_fut = read_one_byte(read_fd);
     let status_fut = child.status();
@@ -75,7 +74,6 @@ async fn wait_with_ready_signal(
         futures::future::Either::Left((got_signal, remaining)) => {
             if got_signal {
                 *start_time = std::time::Instant::now();
-                *rusage_start = Rusage::new();
             }
             // No signal (EOF without data): child exited without writing to
             // SIRUN_READY_FD. Use original timers — full process lifetime
@@ -94,14 +92,13 @@ async fn run_with_instruction_count(
     config: &Config,
     read_fd: RawFd,
     start_time: &mut std::time::Instant,
-    rusage_start: &mut Rusage,
 ) -> Result<(ExitStatus, Option<u64>)> {
     use perfcnt::AbstractPerfCounter;
     use perfcnt::linux::{HardwareEventType, PerfCounterBuilderLinux};
 
     if !config.instructions {
         return Ok((
-            wait_with_ready_signal(child, read_fd, start_time, rusage_start).await?,
+            wait_with_ready_signal(child, read_fd, start_time).await?,
             None,
         ));
     }
@@ -122,7 +119,6 @@ async fn run_with_instruction_count(
             futures::future::Either::Left((got_signal, remaining)) => {
                 let startup = if got_signal {
                     *start_time = std::time::Instant::now();
-                    *rusage_start = Rusage::new();
                     counter.stop()?;
                     let val = counter.read()?;
                     counter.start()?;
@@ -151,10 +147,9 @@ async fn run_with_instruction_count(
     _config: &Config,
     read_fd: RawFd,
     start_time: &mut std::time::Instant,
-    rusage_start: &mut Rusage,
 ) -> Result<(ExitStatus, Option<u64>)> {
     Ok((
-        wait_with_ready_signal(child, read_fd, start_time, rusage_start).await?,
+        wait_with_ready_signal(child, read_fd, start_time).await?,
         None,
     ))
 }
@@ -172,7 +167,10 @@ async fn run_test(config: &Config, mut metrics: &mut HashMap<String, MetricValue
     )?;
 
     let mut start_time = std::time::Instant::now();
-    let mut rusage_start = Rusage::new();
+    // rusage_start cannot be reset at signal time: RUSAGE_CHILDREN only
+    // accounts for children that have already exited, so user.time/system.time/
+    // cpu% always cover the full process lifetime.
+    let rusage_start = Rusage::new();
     let mut child = run_cmd(&config.run, &config.env, Some(write_fd))?;
     // Close parent's write end so the child's exit causes EOF on the read end.
     nix::unistd::close(write_fd)?;
@@ -182,7 +180,6 @@ async fn run_test(config: &Config, mut metrics: &mut HashMap<String, MetricValue
         config,
         read_fd,
         &mut start_time,
-        &mut rusage_start,
     )
     .await?;
 

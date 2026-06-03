@@ -101,10 +101,12 @@ Create a JSON or YAML file with the following properties:
   determine which port to send data to.
 * **`SIRUN_READY_FD`**: A writable file descriptor provided by sirun to the
   benchmarked process. Write any byte to this descriptor to signal that startup
-  is complete; sirun will reset `wall.time`, `user.time`, `system.time`,
-  `cpu.pct.wall.time`, and (Linux only) `instructions` to measure only the
-  post-ready period. If the process exits without writing to this descriptor,
-  sirun falls back to measuring the full process lifetime. Example (Node.js):
+  is complete; sirun will reset `wall.time` (and `instructions` on Linux) to
+  measure only the post-ready period. `user.time`, `system.time`,
+  `cpu.pct.wall.time`, and `max.res.size` always cover the full process
+  lifetime regardless of the signal. If the process exits without writing to
+  this descriptor, sirun falls back to measuring the full process lifetime.
+  Example (Node.js):
   ```js
   require('fs').writeSync(parseInt(process.env.SIRUN_READY_FD), 'x');
   ```
