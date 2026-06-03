@@ -11,7 +11,12 @@ use async_std::{
     task::{sleep, spawn},
 };
 use serde_json::json;
-use std::{collections::HashMap, env, os::unix::process::ExitStatusExt, process::exit};
+use std::{
+    collections::HashMap,
+    env,
+    os::unix::{io::{FromRawFd, RawFd}, process::ExitStatusExt},
+    process::exit,
+};
 use which::which;
 use indexmap::IndexMap;
 
@@ -48,29 +53,110 @@ async fn test_timeout(timeout: u64) {
     exit(1);
 }
 
-#[cfg(target_os = "linux")]
-async fn run_with_instruction_count(child: &mut Child, config: &Config) -> Result<(ExitStatus, Option<u64>)> {
-    use perfcnt::AbstractPerfCounter;
-    use perfcnt::linux::{PerfCounterBuilderLinux, HardwareEventType};
-    if config.instructions {
-        let pid = child.id();
-        let mut counter = PerfCounterBuilderLinux::from_hardware_event(HardwareEventType::Instructions)
-            .for_pid(pid as i32)
-            .finish()?;
-        counter.start()?;
-        let status = child.status().await?;
-        counter.stop()?;
-        let instructions = counter.read()?;
+async fn read_one_byte(fd: RawFd) -> bool {
+    async_std::task::spawn_blocking(move || {
+        let mut buf = [0u8; 1];
+        let mut f = unsafe { std::fs::File::from_raw_fd(fd) };
+        matches!(std::io::Read::read(&mut f, &mut buf), Ok(n) if n > 0)
+    })
+    .await
+}
 
-        Ok((status, Some(instructions)))
-    } else {
-        Ok((child.status().await?, None))
+async fn wait_with_ready_signal(
+    child: &mut Child,
+    read_fd: RawFd,
+    start_time: &mut std::time::Instant,
+    rusage_start: &mut Rusage,
+) -> Result<ExitStatus> {
+    let pipe_fut = read_one_byte(read_fd);
+    let status_fut = child.status();
+    futures::pin_mut!(pipe_fut, status_fut);
+    match futures::future::select(pipe_fut, status_fut).await {
+        futures::future::Either::Left((got_signal, remaining)) => {
+            if got_signal {
+                *start_time = std::time::Instant::now();
+                *rusage_start = Rusage::new();
+            }
+            // No signal (EOF without data): child exited without writing to
+            // SIRUN_READY_FD. Use original timers — full process lifetime
+            // is measured.
+            remaining.await.map_err(Into::into)
+        }
+        // Child exited before any data was written to the pipe.
+        // Use original timers — full process lifetime is measured.
+        futures::future::Either::Right((status, _)) => status.map_err(Into::into),
     }
 }
 
+#[cfg(target_os = "linux")]
+async fn run_with_instruction_count(
+    child: &mut Child,
+    config: &Config,
+    read_fd: RawFd,
+    start_time: &mut std::time::Instant,
+    rusage_start: &mut Rusage,
+) -> Result<(ExitStatus, Option<u64>)> {
+    use perfcnt::AbstractPerfCounter;
+    use perfcnt::linux::{HardwareEventType, PerfCounterBuilderLinux};
+
+    if !config.instructions {
+        return Ok((
+            wait_with_ready_signal(child, read_fd, start_time, rusage_start).await?,
+            None,
+        ));
+    }
+
+    let pid = child.id();
+    let mut counter =
+        PerfCounterBuilderLinux::from_hardware_event(HardwareEventType::Instructions)
+            .for_pid(pid as i32)
+            .finish()?;
+    counter.start()?;
+
+    let pipe_fut = read_one_byte(read_fd);
+    let status_fut = child.status();
+    futures::pin_mut!(pipe_fut, status_fut);
+
+    let (startup_instructions, status) =
+        match futures::future::select(pipe_fut, status_fut).await {
+            futures::future::Either::Left((got_signal, remaining)) => {
+                let startup = if got_signal {
+                    *start_time = std::time::Instant::now();
+                    *rusage_start = Rusage::new();
+                    counter.stop()?;
+                    let val = counter.read()?;
+                    counter.start()?;
+                    val
+                } else {
+                    // Child closed write end (exited) without writing to
+                    // SIRUN_READY_FD. Use original timers and count all
+                    // instructions from process start.
+                    0
+                };
+                (startup, remaining.await?)
+            }
+            // Child exited before any data arrived on the pipe.
+            // Use original timers and count all instructions from process start.
+            futures::future::Either::Right((status, _)) => (0, status?),
+        };
+
+    counter.stop()?;
+    let total = counter.read()?;
+    Ok((status, Some(total - startup_instructions)))
+}
+
 #[cfg(not(target_os = "linux"))]
-async fn run_with_instruction_count(child: &mut Child, _config: &Config) -> Result<(ExitStatus, Option<u64>)> {
-    Ok((child.status().await?, None))
+async fn run_with_instruction_count(
+    child: &mut Child,
+    _config: &Config,
+    read_fd: RawFd,
+    start_time: &mut std::time::Instant,
+    rusage_start: &mut Rusage,
+) -> Result<(ExitStatus, Option<u64>)> {
+    Ok((
+        wait_with_ready_signal(child, read_fd, start_time, rusage_start).await?,
+        None,
+    ))
 }
 
 async fn run_test(config: &Config, mut metrics: &mut HashMap<String, MetricValue>) -> Result<()> {
@@ -78,10 +164,28 @@ async fn run_test(config: &Config, mut metrics: &mut HashMap<String, MetricValue
         spawn(test_timeout(timeout));
     }
 
-    let start_time = std::time::Instant::now();
-    let rusage_start = Rusage::new();
-    let mut child = run_cmd(&config.run, &config.env, None)?;
-    let (status, instructions) = run_with_instruction_count(&mut child, config).await?;
+    let (read_fd, write_fd) = nix::unistd::pipe()?;
+    // Set CLOEXEC on read_fd so the child does not inherit the read end.
+    nix::fcntl::fcntl(
+        read_fd,
+        nix::fcntl::FcntlArg::F_SETFD(nix::fcntl::FdFlag::FD_CLOEXEC),
+    )?;
+
+    let mut start_time = std::time::Instant::now();
+    let mut rusage_start = Rusage::new();
+    let mut child = run_cmd(&config.run, &config.env, Some(write_fd))?;
+    // Close parent's write end so the child's exit causes EOF on the read end.
+    nix::unistd::close(write_fd)?;
+
+    let (status, instructions) = run_with_instruction_count(
+        &mut child,
+        config,
+        read_fd,
+        &mut start_time,
+        &mut rusage_start,
+    )
+    .await?;
+
     let duration = start_time.elapsed().as_micros();
     metrics.insert("wall.time".to_owned(), (duration as f64).into());
     let rusage_result = Rusage::new() - rusage_start;
