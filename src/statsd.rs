@@ -1,5 +1,5 @@
 use crate::metric_value::*;
-use anyhow::*;
+use anyhow::Result;
 use async_std::{
     net::UdpSocket,
     sync::{Arc, Barrier, RwLock},

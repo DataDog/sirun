@@ -1,4 +1,4 @@
-use anyhow::*;
+use anyhow::{bail, Result};
 use async_std::{
     process::{Command, Child, Stdio},
     task::sleep,
