@@ -337,3 +337,29 @@ fn ready_signal_fallback_when_no_signal() {
             == 1
     });
 }
+
+#[test]
+#[serial]
+fn ready_signal_cpu_pct_bounded() {
+    json_has!(
+        "./examples/ready-signal-cpu.json",
+        |map: &serde_yaml::Mapping| {
+            let iter = map
+                .get(&"iterations".into())
+                .unwrap()
+                .as_sequence()
+                .unwrap()[0]
+                .as_mapping()
+                .unwrap();
+            let cpu_pct = iter
+                .get(&"cpu.pct.wall.time".into())
+                .unwrap()
+                .as_f64()
+                .unwrap();
+            // Without the fix, user.time covers the full CPU-intensive startup
+            // while wall.time covers only the post-ready period (near zero),
+            // making cpu.pct.wall.time >> 100%. With the fix it must stay <= 100%.
+            cpu_pct <= 100.0
+        }
+    );
+}
