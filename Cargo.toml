@@ -22,7 +22,6 @@ serde = { version = "1.0.124", features = ["derive"] }
 anyhow = "<=1.0.48"
 which = "4.0.2"
 indexmap = { version = "2.9.0", features = ["serde"] }
-futures = "0.3"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 perfcnt = "0.8.0"

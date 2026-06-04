@@ -67,30 +67,17 @@ async fn wait_with_ready_signal(
     read_fd: RawFd,
     start_time: &mut std::time::Instant,
 ) -> Result<(ExitStatus, Option<(f64, f64)>)> {
-    // Fetch pid before child.status() borrows child mutably for the future's
-    // lifetime.
-    let pid = child.id();
-    let pipe_fut = read_one_byte(read_fd);
-    let status_fut = child.status();
-    futures::pin_mut!(pipe_fut, status_fut);
-    match futures::future::select(pipe_fut, status_fut).await {
-        futures::future::Either::Left((got_signal, remaining)) => {
-            let startup_cpu = if got_signal {
-                let cpu = read_child_cpu_us(pid);
-                *start_time = std::time::Instant::now();
-                cpu
-            } else {
-                // No signal (EOF without data): child exited without writing to
-                // SIRUN_READY_FD. Use original timers — full process lifetime
-                // is measured.
-                None
-            };
-            Ok((remaining.await?, startup_cpu))
-        }
-        // Child exited before any data was written to the pipe.
-        // Use original timers — full process lifetime is measured.
-        futures::future::Either::Right((status, _)) => Ok((status?, None)),
-    }
+    // Returns true if the app wrote to SIRUN_READY_FD; false if it exited
+    // without signaling (parent closed write end, so child exit → EOF).
+    let got_signal = read_one_byte(read_fd).await;
+    let startup_cpu = if got_signal {
+        let cpu = read_child_cpu_us(child.id());
+        *start_time = std::time::Instant::now();
+        cpu
+    } else {
+        None
+    };
+    Ok((child.status().await?, startup_cpu))
 }
 
 #[cfg(target_os = "linux")]
@@ -116,33 +103,19 @@ async fn run_with_instruction_count(
             .finish()?;
     counter.start()?;
 
-    let pipe_fut = read_one_byte(read_fd);
-    let status_fut = child.status();
-    futures::pin_mut!(pipe_fut, status_fut);
+    let got_signal = read_one_byte(read_fd).await;
+    let (startup_instructions, startup_cpu) = if got_signal {
+        let cpu = read_child_cpu_us(pid);
+        *start_time = std::time::Instant::now();
+        counter.stop()?;
+        let val = counter.read()?;
+        counter.start()?;
+        (val, cpu)
+    } else {
+        (0, None)
+    };
 
-    let (startup_instructions, startup_cpu, status) =
-        match futures::future::select(pipe_fut, status_fut).await {
-            futures::future::Either::Left((got_signal, remaining)) => {
-                let (startup_instr, cpu) = if got_signal {
-                    let cpu = read_child_cpu_us(pid);
-                    *start_time = std::time::Instant::now();
-                    counter.stop()?;
-                    let val = counter.read()?;
-                    counter.start()?;
-                    (val, cpu)
-                } else {
-                    // Child closed write end without writing to SIRUN_READY_FD.
-                    // Use original timers and count all instructions from
-                    // process start.
-                    (0, None)
-                };
-                (startup_instr, cpu, remaining.await?)
-            }
-            // Child exited before any data arrived on the pipe.
-            // Use original timers and count all instructions from process start.
-            futures::future::Either::Right((status, _)) => (0, None, status?),
-        };
-
+    let status = child.status().await?;
     counter.stop()?;
     let total = counter.read()?;
     Ok((status, Some(total - startup_instructions), startup_cpu))
