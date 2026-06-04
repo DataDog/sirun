@@ -6,11 +6,18 @@ on:
 jobs:
   create-release:
     runs-on: ubuntu-latest
+    permissions:
+      id-token: write
     steps:
+      - uses: DataDog/dd-octo-sts-action@96a25462dbcb10ebf0bfd6e2ccc917d2ab235b9a # v1.0.4
+        id: octo-sts
+        with:
+          scope: DataDog/sirun
+          policy: self.release.create-release
       - uses: actions/checkout@v2
       - uses: taiki-e/create-gh-release-action@v1
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ steps.octo-sts.outputs.token }}
   upload-assets:
     strategy:
       matrix:
@@ -22,7 +29,14 @@ jobs:
           - target: aarch64-apple-darwin
             os: macos-latest
     runs-on: ${{ matrix.os || 'ubuntu-latest'}}
+    permissions:
+      id-token: write
     steps:
+      - uses: DataDog/dd-octo-sts-action@96a25462dbcb10ebf0bfd6e2ccc917d2ab235b9a # v1.0.4
+        id: octo-sts
+        with:
+          scope: DataDog/sirun
+          policy: self.release.create-release
       - uses: actions/checkout@v2
       - uses: taiki-e/upload-rust-binary-action@v1
         with:
@@ -30,5 +44,5 @@ jobs:
           target: ${{ matrix.target }}
           archive: $bin-$tag-$target
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ steps.octo-sts.outputs.token }}
           CARGO_PROFILE_RELEASE_LTO: true
