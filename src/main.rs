@@ -54,10 +54,12 @@ async fn test_timeout(timeout: u64) {
 }
 
 async fn read_one_byte(fd: RawFd) -> bool {
-    use async_std::io::ReadExt;
-    let mut buf = [0u8; 1];
-    let mut f = unsafe { async_std::fs::File::from_raw_fd(fd) };
-    f.read(&mut buf).await.map(|n| n > 0).unwrap_or(false)
+    async_std::task::spawn_blocking(move || {
+        let mut buf = [0u8; 1];
+        let mut f = unsafe { std::fs::File::from_raw_fd(fd) };
+        matches!(std::io::Read::read(&mut f, &mut buf), Ok(n) if n > 0)
+    })
+    .await
 }
 
 async fn wait_with_ready_signal(
