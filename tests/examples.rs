@@ -426,12 +426,8 @@ fn ready_signal_cpu_pct_100x() {
     );
 }
 
-/// Diagnostic: probe proc_pidinfo pti_total_user values on macOS to understand
-/// what CPU values it returns during fork(), exec(), and for CPU-busy processes.
-#[test]
-#[serial]
-#[cfg(target_os = "macos")]
-fn diagnose_proc_pidinfo_on_macos() {
+#[allow(dead_code)]
+fn diagnose_proc_pidinfo_on_macos_disabled() {
     use std::mem;
 
     const PROC_PIDTASKINFO: nix::libc::c_int = 4;
