@@ -426,8 +426,8 @@ fn ready_signal_cpu_pct_100x() {
     );
 }
 
-/// Diagnostic test: directly probe proc_pidinfo on macOS to understand
-/// what errno it returns when it fails for child processes.
+/// Diagnostic: probe proc_pidinfo pti_total_user values on macOS to understand
+/// what CPU values it returns during fork(), exec(), and for CPU-busy processes.
 #[test]
 #[serial]
 #[cfg(target_os = "macos")]
@@ -435,63 +435,77 @@ fn diagnose_proc_pidinfo_on_macos() {
     use std::mem;
 
     const PROC_PIDTASKINFO: nix::libc::c_int = 4;
-    const SIZE: usize = 6 * 8 + 12 * 4; // 6 u64 + 12 i32 = 96 bytes
+
+    #[repr(C)]
+    struct ProcTaskInfo {
+        pti_virtual_size: u64, pti_resident_size: u64,
+        pti_total_user: u64, pti_total_system: u64,
+        pti_threads_user: u64, pti_threads_system: u64,
+        pti_policy: i32, pti_faults: i32, pti_pageins: i32,
+        pti_cow_faults: i32, pti_messages_sent: i32,
+        pti_messages_received: i32, pti_syscalls_mach: i32,
+        pti_syscalls_unix: i32, pti_csw: i32, pti_threadnum: i32,
+        pti_numrunning: i32, pti_priority: i32,
+    }
 
     extern "C" {
         fn proc_pidinfo(
-            pid: nix::libc::c_int,
-            flavor: nix::libc::c_int,
-            arg: u64,
-            buffer: *mut nix::libc::c_void,
-            buffersize: nix::libc::c_int,
+            pid: nix::libc::c_int, flavor: nix::libc::c_int, arg: u64,
+            buffer: *mut nix::libc::c_void, buffersize: nix::libc::c_int,
         ) -> nix::libc::c_int;
     }
 
-    let query = |pid: u32| -> (i32, i32) {
-        let mut buf = [0u8; SIZE];
+    let query = |pid: u32| -> (i32, u64) {
+        let mut info = mem::MaybeUninit::<ProcTaskInfo>::zeroed();
+        let size = mem::size_of::<ProcTaskInfo>() as i32;
         let ret = unsafe {
-            proc_pidinfo(
-                pid as nix::libc::c_int,
-                PROC_PIDTASKINFO,
-                0,
-                buf.as_mut_ptr() as *mut nix::libc::c_void,
-                SIZE as nix::libc::c_int,
-            )
+            proc_pidinfo(pid as i32, PROC_PIDTASKINFO, 0,
+                info.as_mut_ptr() as *mut _, size)
         };
-        let errno = std::io::Error::last_os_error().raw_os_error().unwrap_or(-1);
-        (ret, errno)
+        if ret >= size {
+            let info = unsafe { info.assume_init() };
+            (ret, info.pti_total_user)
+        } else {
+            (ret, 0)
+        }
     };
 
-    // Query our own process
-    let self_pid = std::process::id();
-    let (self_ret, self_errno) = query(self_pid);
+    // Case 1: CPU-busy bash child — does the value reflect the work?
+    let mut busy = std::process::Command::new("bash")
+        .args(["-c", "for i in {1..200000}; do :; done; sleep 10"])
+        .spawn().unwrap();
+    let busy_pid = busy.id();
+    std::thread::sleep(std::time::Duration::from_millis(300));
+    let (ret_busy, user_busy) = query(busy_pid);
+    busy.kill().unwrap(); busy.wait().unwrap();
 
-    // Query a fresh child that stays alive
-    let mut child = std::process::Command::new("sleep")
-        .arg("10")
-        .spawn()
-        .unwrap();
-    let child_pid = child.id();
-
-    // Query immediately
-    let (imm_ret, imm_errno) = query(child_pid);
-
-    // Query after 5ms
+    // Case 2: bash writing to pipe then (sleep 0.3) — read cpu during fork
+    let (pipe_r, pipe_w) = nix::unistd::pipe().unwrap();
+    let pipe_w_str = pipe_w.to_string();
+    let mut pipe_child = std::process::Command::new("bash")
+        .args(["-c", &format!(
+            "for i in {{1..200000}}; do :; done; echo x >&{pw}; (sleep 10)",
+            pw = pipe_w_str)])
+        .spawn().unwrap();
+    let pipe_pid = pipe_child.id();
+    nix::unistd::close(pipe_w).unwrap();
+    // Read signal from pipe
+    let mut buf = [0u8; 1];
+    let _ = nix::unistd::read(pipe_r, &mut buf);
+    nix::unistd::close(pipe_r).unwrap();
+    // Immediately read proc_pidinfo after signal
+    let (ret_sig, user_at_sig) = query(pipe_pid);
     std::thread::sleep(std::time::Duration::from_millis(5));
-    let (late_ret, late_errno) = query(child_pid);
+    let (ret_sig2, user_at_sig2) = query(pipe_pid);
+    pipe_child.kill().unwrap(); pipe_child.wait().unwrap();
 
-    child.kill().unwrap();
-    child.wait().unwrap();
-
-    // Always panic so CI output is visible.
-    // errno 1 = EPERM, 3 = ESRCH, 22 = EINVAL, 0 = success
     panic!(
-        "proc_pidinfo diagnostics — \
-         self(pid={}): ret={} errno={} | \
-         child(pid={}) immediate: ret={} errno={} | \
-         child after 5ms: ret={} errno={}",
-        self_pid, self_ret, self_errno,
-        child_pid, imm_ret, imm_errno,
-        late_ret, late_errno,
+        "proc_pidinfo values —\n\
+         busy bash after 300ms work: ret={} pti_total_user={}ns ({}ms)\n\
+         bash at signal (forking subshell): ret={} pti_total_user={}ns ({}ms)\n\
+         bash 5ms after signal: ret={} pti_total_user={}ns ({}ms)",
+        ret_busy, user_busy, user_busy / 1_000_000,
+        ret_sig, user_at_sig, user_at_sig / 1_000_000,
+        ret_sig2, user_at_sig2, user_at_sig2 / 1_000_000,
     );
 }
