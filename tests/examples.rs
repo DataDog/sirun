@@ -363,3 +363,145 @@ fn ready_signal_cpu_pct_bounded() {
         }
     );
 }
+
+#[test]
+#[serial]
+fn ready_signal_cpu_pct_100x() {
+    let mut passes = 0u32;
+    let mut failures = 0u32;
+    let mut cpu_pcts: Vec<f64> = Vec::new();
+
+    for _ in 0..100 {
+        let output = assert_cmd::Command::cargo_bin("sirun")
+            .unwrap()
+            .arg("./examples/ready-signal-cpu.json")
+            .env("SIRUN_NO_STDIO", "1")
+            .output()
+            .unwrap();
+
+        if output.status.success() {
+            if let Ok(val) =
+                serde_yaml::from_slice::<serde_yaml::Value>(&output.stdout)
+            {
+                if let Some(cpu_pct) = val
+                    .as_mapping()
+                    .and_then(|m| m.get(&"iterations".into()))
+                    .and_then(|v| v.as_sequence())
+                    .and_then(|s| s.get(0))
+                    .and_then(|v| v.as_mapping())
+                    .and_then(|m| m.get(&"cpu.pct.wall.time".into()))
+                    .and_then(|v| v.as_f64())
+                {
+                    cpu_pcts.push(cpu_pct);
+                    if cpu_pct <= 100.0 {
+                        passes += 1;
+                    } else {
+                        failures += 1;
+                    }
+                } else {
+                    failures += 1;
+                }
+            } else {
+                failures += 1;
+            }
+        } else {
+            failures += 1;
+        }
+    }
+
+    let max_pct = cpu_pcts
+        .iter()
+        .cloned()
+        .fold(f64::NEG_INFINITY, f64::max);
+    eprintln!(
+        "spawn_blocking 100x: {}/100 passed, \
+         max cpu.pct.wall.time = {:.1}%",
+        passes, max_pct
+    );
+    assert!(
+        passes >= 95,
+        "spawn_blocking: {}/100 passed (max cpu.pct.wall.time = {:.1}%)",
+        passes,
+        max_pct
+    );
+}
+
+#[allow(dead_code)]
+fn diagnose_proc_pidinfo_on_macos_disabled() {
+    use std::mem;
+
+    const PROC_PIDTASKINFO: nix::libc::c_int = 4;
+
+    #[repr(C)]
+    struct ProcTaskInfo {
+        pti_virtual_size: u64, pti_resident_size: u64,
+        pti_total_user: u64, pti_total_system: u64,
+        pti_threads_user: u64, pti_threads_system: u64,
+        pti_policy: i32, pti_faults: i32, pti_pageins: i32,
+        pti_cow_faults: i32, pti_messages_sent: i32,
+        pti_messages_received: i32, pti_syscalls_mach: i32,
+        pti_syscalls_unix: i32, pti_csw: i32, pti_threadnum: i32,
+        pti_numrunning: i32, pti_priority: i32,
+    }
+
+    extern "C" {
+        fn proc_pidinfo(
+            pid: nix::libc::c_int, flavor: nix::libc::c_int, arg: u64,
+            buffer: *mut nix::libc::c_void, buffersize: nix::libc::c_int,
+        ) -> nix::libc::c_int;
+    }
+
+    let query = |pid: u32| -> (i32, u64) {
+        let mut info = mem::MaybeUninit::<ProcTaskInfo>::zeroed();
+        let size = mem::size_of::<ProcTaskInfo>() as i32;
+        let ret = unsafe {
+            proc_pidinfo(pid as i32, PROC_PIDTASKINFO, 0,
+                info.as_mut_ptr() as *mut _, size)
+        };
+        if ret >= size {
+            let info = unsafe { info.assume_init() };
+            (ret, info.pti_total_user)
+        } else {
+            (ret, 0)
+        }
+    };
+
+    // Case 1: CPU-busy bash child — does the value reflect the work?
+    let mut busy = std::process::Command::new("bash")
+        .args(["-c", "for i in {1..200000}; do :; done; sleep 10"])
+        .spawn().unwrap();
+    let busy_pid = busy.id();
+    std::thread::sleep(std::time::Duration::from_millis(300));
+    let (ret_busy, user_busy) = query(busy_pid);
+    busy.kill().unwrap(); busy.wait().unwrap();
+
+    // Case 2: bash writing to pipe then (sleep 0.3) — read cpu during fork
+    let (pipe_r, pipe_w) = nix::unistd::pipe().unwrap();
+    let pipe_w_str = pipe_w.to_string();
+    let mut pipe_child = std::process::Command::new("bash")
+        .args(["-c", &format!(
+            "for i in {{1..200000}}; do :; done; echo x >&{pw}; (sleep 10)",
+            pw = pipe_w_str)])
+        .spawn().unwrap();
+    let pipe_pid = pipe_child.id();
+    nix::unistd::close(pipe_w).unwrap();
+    // Read signal from pipe
+    let mut buf = [0u8; 1];
+    let _ = nix::unistd::read(pipe_r, &mut buf);
+    nix::unistd::close(pipe_r).unwrap();
+    // Immediately read proc_pidinfo after signal
+    let (ret_sig, user_at_sig) = query(pipe_pid);
+    std::thread::sleep(std::time::Duration::from_millis(5));
+    let (ret_sig2, user_at_sig2) = query(pipe_pid);
+    pipe_child.kill().unwrap(); pipe_child.wait().unwrap();
+
+    panic!(
+        "proc_pidinfo values —\n\
+         busy bash after 300ms work: ret={} pti_total_user={}ns ({}ms)\n\
+         bash at signal (forking subshell): ret={} pti_total_user={}ns ({}ms)\n\
+         bash 5ms after signal: ret={} pti_total_user={}ns ({}ms)",
+        ret_busy, user_busy, user_busy / 1_000_000,
+        ret_sig, user_at_sig, user_at_sig / 1_000_000,
+        ret_sig2, user_at_sig2, user_at_sig2 / 1_000_000,
+    );
+}
