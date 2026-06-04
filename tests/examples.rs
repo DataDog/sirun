@@ -363,3 +363,66 @@ fn ready_signal_cpu_pct_bounded() {
         }
     );
 }
+
+#[test]
+#[serial]
+fn ready_signal_cpu_pct_100x() {
+    let mut passes = 0u32;
+    let mut failures = 0u32;
+    let mut cpu_pcts: Vec<f64> = Vec::new();
+
+    for _ in 0..100 {
+        let output = assert_cmd::Command::cargo_bin("sirun")
+            .unwrap()
+            .arg("./examples/ready-signal-cpu.json")
+            .env("SIRUN_NO_STDIO", "1")
+            .output()
+            .unwrap();
+
+        if output.status.success() {
+            if let Ok(val) =
+                serde_yaml::from_slice::<serde_yaml::Value>(&output.stdout)
+            {
+                if let Some(cpu_pct) = val
+                    .as_mapping()
+                    .and_then(|m| m.get(&"iterations".into()))
+                    .and_then(|v| v.as_sequence())
+                    .and_then(|s| s.get(0))
+                    .and_then(|v| v.as_mapping())
+                    .and_then(|m| m.get(&"cpu.pct.wall.time".into()))
+                    .and_then(|v| v.as_f64())
+                {
+                    cpu_pcts.push(cpu_pct);
+                    if cpu_pct <= 100.0 {
+                        passes += 1;
+                    } else {
+                        failures += 1;
+                    }
+                } else {
+                    failures += 1;
+                }
+            } else {
+                failures += 1;
+            }
+        } else {
+            failures += 1;
+        }
+    }
+
+    let max_pct = cpu_pcts
+        .iter()
+        .cloned()
+        .fold(f64::NEG_INFINITY, f64::max);
+    eprintln!(
+        "async_std::fs::File 100x: {}/100 passed, \
+         max cpu.pct.wall.time = {:.1}%",
+        passes, max_pct
+    );
+    assert!(
+        passes >= 95,
+        "async_std::fs::File: {}/100 passed \
+         (max cpu.pct.wall.time = {:.1}%)",
+        passes,
+        max_pct
+    );
+}
