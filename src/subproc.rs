@@ -3,7 +3,7 @@ use async_std::{
     process::{Command, Child, Stdio},
     task::sleep,
 };
-use std::{collections::HashMap, env, os::unix::process::ExitStatusExt, time::Duration};
+use std::{collections::HashMap, env, os::unix::{io::RawFd, process::ExitStatusExt}, time::Duration};
 
 use crate::config::*;
 
@@ -27,7 +27,7 @@ async fn run_setup_or_teardown(typ: &str, config: &Config) -> Result<()> {
         if attempts == 100 {
             bail!("{} script did not complete successfully. aborting.", typ);
         }
-        let mut child = run_cmd(command_arr, env)?;
+        let mut child = run_cmd(command_arr, env, None)?;
         let status = child.status().await?;
         let maybe_code = status.code();
         if let Some(maybe_code) = maybe_code {
@@ -67,12 +67,17 @@ fn get_stdio() -> Stdio {
 pub(crate) fn run_cmd(
     command_arr: &[String],
     env: &HashMap<String, String>,
+    ready_fd: Option<RawFd>,
 ) -> Result<Child> {
+    let mut env = env.clone();
+    if let Some(fd) = ready_fd {
+        env.insert("SIRUN_READY_FD".into(), fd.to_string());
+    }
     let command = command_arr[0].clone();
     let args = command_arr.iter().skip(1);
     Command::new(command)
         .args(args)
-        .envs(env.clone())
+        .envs(env)
         .stdout(get_stdio())
         .stderr(get_stdio())
         .spawn()

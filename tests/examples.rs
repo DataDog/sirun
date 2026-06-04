@@ -297,3 +297,69 @@ fn insctrution_counts() {
 fn service() {
     run!("./examples/service.json").assert().success();
 }
+
+#[test]
+#[serial]
+fn ready_signal_resets_wall_time() {
+    json_has!(
+        "./examples/ready-signal.json",
+        |map: &serde_yaml::Mapping| {
+            let wall_time = map
+                .get(&"iterations".into())
+                .unwrap()
+                .as_sequence()
+                .unwrap()[0]
+                .as_mapping()
+                .unwrap()
+                .get(&"wall.time".into())
+                .unwrap()
+                .as_f64()
+                .unwrap();
+            // Startup is 500ms; post-ready work is ~0ms.
+            // With ready signal: wall.time << 500_000μs.
+            // Threshold of 200_000μs gives generous headroom.
+            wall_time < 200_000.0
+        }
+    );
+}
+
+#[test]
+#[serial]
+fn ready_signal_fallback_when_no_signal() {
+    // App exits without writing to SIRUN_READY_FD — full timing used.
+    json_has!("./examples/simple.json", |map: &serde_yaml::Mapping| {
+        // simple.json has no ready signal; we just verify it still runs normally.
+        map.get(&"iterations".into())
+            .unwrap()
+            .as_sequence()
+            .unwrap()
+            .len()
+            == 1
+    });
+}
+
+#[test]
+#[serial]
+fn ready_signal_cpu_pct_bounded() {
+    json_has!(
+        "./examples/ready-signal-cpu.json",
+        |map: &serde_yaml::Mapping| {
+            let iter = map
+                .get(&"iterations".into())
+                .unwrap()
+                .as_sequence()
+                .unwrap()[0]
+                .as_mapping()
+                .unwrap();
+            let cpu_pct = iter
+                .get(&"cpu.pct.wall.time".into())
+                .unwrap()
+                .as_f64()
+                .unwrap();
+            // Without the fix, user.time covers the full CPU-intensive startup
+            // while wall.time covers only the post-ready period (near zero),
+            // making cpu.pct.wall.time >> 100%. With the fix it must stay <= 100%.
+            cpu_pct <= 100.0
+        }
+    );
+}

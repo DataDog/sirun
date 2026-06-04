@@ -11,7 +11,12 @@ use async_std::{
     task::{sleep, spawn},
 };
 use serde_json::json;
-use std::{collections::HashMap, env, os::unix::process::ExitStatusExt, process::exit};
+use std::{
+    collections::HashMap,
+    env,
+    os::unix::{io::{FromRawFd, RawFd}, process::ExitStatusExt},
+    process::exit,
+};
 use which::which;
 use indexmap::IndexMap;
 
@@ -48,29 +53,82 @@ async fn test_timeout(timeout: u64) {
     exit(1);
 }
 
+async fn read_one_byte(fd: RawFd) -> bool {
+    use async_std::io::ReadExt;
+    let mut buf = [0u8; 1];
+    let mut f = unsafe { async_std::fs::File::from_raw_fd(fd) };
+    f.read(&mut buf).await.map(|n| n > 0).unwrap_or(false)
+}
+
+async fn wait_with_ready_signal(
+    child: &mut Child,
+    read_fd: RawFd,
+    start_time: &mut std::time::Instant,
+) -> Result<(ExitStatus, Option<(f64, f64)>)> {
+    // Returns true if the app wrote to SIRUN_READY_FD; false if it exited
+    // without signaling (parent closed write end, so child exit → EOF).
+    let got_signal = read_one_byte(read_fd).await;
+    let startup_cpu = if got_signal {
+        let cpu = read_child_cpu_us(child.id());
+        *start_time = std::time::Instant::now();
+        cpu
+    } else {
+        None
+    };
+    Ok((child.status().await?, startup_cpu))
+}
+
 #[cfg(target_os = "linux")]
-async fn run_with_instruction_count(child: &mut Child, config: &Config) -> Result<(ExitStatus, Option<u64>)> {
+async fn run_with_instruction_count(
+    child: &mut Child,
+    config: &Config,
+    read_fd: RawFd,
+    start_time: &mut std::time::Instant,
+) -> Result<(ExitStatus, Option<u64>, Option<(f64, f64)>)> {
     use perfcnt::AbstractPerfCounter;
-    use perfcnt::linux::{PerfCounterBuilderLinux, HardwareEventType};
-    if config.instructions {
-        let pid = child.id();
-        let mut counter = PerfCounterBuilderLinux::from_hardware_event(HardwareEventType::Instructions)
+    use perfcnt::linux::{HardwareEventType, PerfCounterBuilderLinux};
+
+    if !config.instructions {
+        let (status, startup_cpu) =
+            wait_with_ready_signal(child, read_fd, start_time).await?;
+        return Ok((status, None, startup_cpu));
+    }
+
+    let pid = child.id();
+    let mut counter =
+        PerfCounterBuilderLinux::from_hardware_event(HardwareEventType::Instructions)
             .for_pid(pid as i32)
             .finish()?;
-        counter.start()?;
-        let status = child.status().await?;
-        counter.stop()?;
-        let instructions = counter.read()?;
+    counter.start()?;
 
-        Ok((status, Some(instructions)))
+    let got_signal = read_one_byte(read_fd).await;
+    let (startup_instructions, startup_cpu) = if got_signal {
+        let cpu = read_child_cpu_us(pid);
+        *start_time = std::time::Instant::now();
+        counter.stop()?;
+        let val = counter.read()?;
+        counter.start()?;
+        (val, cpu)
     } else {
-        Ok((child.status().await?, None))
-    }
+        (0, None)
+    };
+
+    let status = child.status().await?;
+    counter.stop()?;
+    let total = counter.read()?;
+    Ok((status, Some(total - startup_instructions), startup_cpu))
 }
 
 #[cfg(not(target_os = "linux"))]
-async fn run_with_instruction_count(child: &mut Child, _config: &Config) -> Result<(ExitStatus, Option<u64>)> {
-    Ok((child.status().await?, None))
+async fn run_with_instruction_count(
+    child: &mut Child,
+    _config: &Config,
+    read_fd: RawFd,
+    start_time: &mut std::time::Instant,
+) -> Result<(ExitStatus, Option<u64>, Option<(f64, f64)>)> {
+    let (status, startup_cpu) =
+        wait_with_ready_signal(child, read_fd, start_time).await?;
+    Ok((status, None, startup_cpu))
 }
 
 async fn run_test(config: &Config, mut metrics: &mut HashMap<String, MetricValue>) -> Result<()> {
@@ -78,13 +136,37 @@ async fn run_test(config: &Config, mut metrics: &mut HashMap<String, MetricValue
         spawn(test_timeout(timeout));
     }
 
-    let start_time = std::time::Instant::now();
+    let (read_fd, write_fd) = nix::unistd::pipe()?;
+    // Set CLOEXEC on read_fd so the child does not inherit the read end.
+    nix::fcntl::fcntl(
+        read_fd,
+        nix::fcntl::FcntlArg::F_SETFD(nix::fcntl::FdFlag::FD_CLOEXEC),
+    )?;
+
+    let mut start_time = std::time::Instant::now();
+    // RUSAGE_CHILDREN cannot be snapshotted mid-run (it only updates after a child
+    // exits), so we use read_child_cpu_us to snapshot the live process CPU at
+    // signal time and subtract it from the final RUSAGE_CHILDREN delta.
     let rusage_start = Rusage::new();
-    let mut child = run_cmd(&config.run, &config.env)?;
-    let (status, instructions) = run_with_instruction_count(&mut child, config).await?;
+    let mut child = run_cmd(&config.run, &config.env, Some(write_fd))?;
+    // Close parent's write end so the child's exit causes EOF on the read end.
+    nix::unistd::close(write_fd)?;
+
+    let (status, instructions, startup_cpu) = run_with_instruction_count(
+        &mut child,
+        config,
+        read_fd,
+        &mut start_time,
+    )
+    .await?;
+
     let duration = start_time.elapsed().as_micros();
     metrics.insert("wall.time".to_owned(), (duration as f64).into());
-    let rusage_result = Rusage::new() - rusage_start;
+    let mut rusage_result = Rusage::new() - rusage_start;
+    if let Some((startup_utime, startup_stime)) = startup_cpu {
+        rusage_result.user_time = (rusage_result.user_time - startup_utime).max(0.0);
+        rusage_result.system_time = (rusage_result.system_time - startup_stime).max(0.0);
+    }
     if let Some(instructions) = instructions {
         metrics.insert("instructions".to_owned(), (instructions as f64).into());
     }
@@ -111,7 +193,7 @@ async fn run_test(config: &Config, mut metrics: &mut HashMap<String, MetricValue
 
 fn run_service(config: &Config) -> Result<Option<Child>> {
     Ok(match &config.service {
-        Some(command_arr) => Some(run_cmd(command_arr, &config.env)?),
+        Some(command_arr) => Some(run_cmd(command_arr, &config.env, None)?),
         None => None,
     })
 }
@@ -128,6 +210,7 @@ async fn run_iteration(
     let mut child = run_cmd(
         &env::args().take(1).collect::<Vec<String>>(),
         &sub_config.env,
+        None,
     )?;
     let status = child.status().await?;
     let status = status.code().expect("no exit code");
