@@ -425,3 +425,73 @@ fn ready_signal_cpu_pct_100x() {
         max_pct
     );
 }
+
+/// Diagnostic test: directly probe proc_pidinfo on macOS to understand
+/// what errno it returns when it fails for child processes.
+#[test]
+#[serial]
+#[cfg(target_os = "macos")]
+fn diagnose_proc_pidinfo_on_macos() {
+    use std::mem;
+
+    const PROC_PIDTASKINFO: nix::libc::c_int = 4;
+    const SIZE: usize = 6 * 8 + 12 * 4; // 6 u64 + 12 i32 = 96 bytes
+
+    extern "C" {
+        fn proc_pidinfo(
+            pid: nix::libc::c_int,
+            flavor: nix::libc::c_int,
+            arg: u64,
+            buffer: *mut nix::libc::c_void,
+            buffersize: nix::libc::c_int,
+        ) -> nix::libc::c_int;
+    }
+
+    let query = |pid: u32| -> (i32, i32) {
+        let mut buf = [0u8; SIZE];
+        let ret = unsafe {
+            proc_pidinfo(
+                pid as nix::libc::c_int,
+                PROC_PIDTASKINFO,
+                0,
+                buf.as_mut_ptr() as *mut nix::libc::c_void,
+                SIZE as nix::libc::c_int,
+            )
+        };
+        let errno = std::io::Error::last_os_error().raw_os_error().unwrap_or(-1);
+        (ret, errno)
+    };
+
+    // Query our own process
+    let self_pid = std::process::id();
+    let (self_ret, self_errno) = query(self_pid);
+
+    // Query a fresh child that stays alive
+    let mut child = std::process::Command::new("sleep")
+        .arg("10")
+        .spawn()
+        .unwrap();
+    let child_pid = child.id();
+
+    // Query immediately
+    let (imm_ret, imm_errno) = query(child_pid);
+
+    // Query after 5ms
+    std::thread::sleep(std::time::Duration::from_millis(5));
+    let (late_ret, late_errno) = query(child_pid);
+
+    child.kill().unwrap();
+    child.wait().unwrap();
+
+    // Always panic so CI output is visible.
+    // errno 1 = EPERM, 3 = ESRCH, 22 = EINVAL, 0 = success
+    panic!(
+        "proc_pidinfo diagnostics — \
+         self(pid={}): ret={} errno={} | \
+         child(pid={}) immediate: ret={} errno={} | \
+         child after 5ms: ret={} errno={}",
+        self_pid, self_ret, self_errno,
+        child_pid, imm_ret, imm_errno,
+        late_ret, late_errno,
+    );
+}
