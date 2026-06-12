@@ -39,16 +39,16 @@ fn simple_json() {
 fn wall_and_cpu_pct() {
     json_has!("examples/simple.json", move |map: &serde_yaml::Mapping| {
         let map = map
-            .get(&"iterations".into())
+            .get("iterations")
             .unwrap()
             .as_sequence()
             .unwrap();
         let map = map.get(0).unwrap().as_mapping().unwrap();
-        let wall_time = map.get(&"wall.time".into()).unwrap().as_f64().unwrap();
-        let stime = map.get(&"system.time".into()).unwrap().as_f64().unwrap();
-        let utime = map.get(&"user.time".into()).unwrap().as_f64().unwrap();
+        let wall_time = map.get("wall.time").unwrap().as_f64().unwrap();
+        let stime = map.get("system.time").unwrap().as_f64().unwrap();
+        let utime = map.get("user.time").unwrap().as_f64().unwrap();
         let pct = map
-            .get(&"cpu.pct.wall.time".into())
+            .get("cpu.pct.wall.time")
             .unwrap()
             .as_f64()
             .unwrap();
@@ -188,7 +188,7 @@ fn iterations() {
             "you should see this\nyou should see this\nyou should see this",
         ));
     json_has!("./examples/iterations.json", |map: &serde_yaml::Mapping| {
-        map.get(&"iterations".into())
+        map.get("iterations")
             .unwrap()
             .as_sequence()
             .unwrap()
@@ -208,7 +208,7 @@ fn iterations_nohup() {
 fn iterations_not_cumulative() {
     json_has!("./examples/iterations.json", |map: &serde_yaml::Mapping| {
         let iter = map
-            .get(&"iterations".into())
+            .get("iterations")
             .unwrap()
             .as_sequence()
             .unwrap()
@@ -218,7 +218,7 @@ fn iterations_not_cumulative() {
             let val = iteration
                 .as_mapping()
                 .unwrap()
-                .get(&"user.time".into())
+                .get("user.time")
                 .unwrap()
                 .as_f64()
                 .unwrap();
@@ -236,13 +236,13 @@ fn iterations_not_cumulative() {
 #[serial]
 fn long() {
     json_has!("./examples/long.json", |map: &serde_yaml::Mapping| {
-        map.get(&"iterations".into())
+        map.get("iterations")
             .unwrap()
             .get(0)
             .unwrap()
             .as_mapping()
             .unwrap()
-            .get(&"user.time".into())
+            .get("user.time")
             .unwrap()
             .as_f64()
             .unwrap()
@@ -283,7 +283,7 @@ fn assigned_port() {
 fn insctrution_counts() {
     if caps::has_cap(None, caps::CapSet::Permitted, caps::Capability::CAP_SYS_PTRACE).unwrap() {
         json_has!("./examples/instructions.json", move |map: &serde_yaml::Mapping| {
-            let count = map.get(&"instructions".into())
+            let count = map.get("instructions")
                 .unwrap()
                 .as_f64()
                 .unwrap();
@@ -305,13 +305,13 @@ fn ready_signal_resets_wall_time() {
         "./examples/ready-signal.json",
         |map: &serde_yaml::Mapping| {
             let wall_time = map
-                .get(&"iterations".into())
+                .get("iterations")
                 .unwrap()
                 .as_sequence()
                 .unwrap()[0]
                 .as_mapping()
                 .unwrap()
-                .get(&"wall.time".into())
+                .get("wall.time")
                 .unwrap()
                 .as_f64()
                 .unwrap();
@@ -329,7 +329,7 @@ fn ready_signal_fallback_when_no_signal() {
     // App exits without writing to SIRUN_READY_FD — full timing used.
     json_has!("./examples/simple.json", |map: &serde_yaml::Mapping| {
         // simple.json has no ready signal; we just verify it still runs normally.
-        map.get(&"iterations".into())
+        map.get("iterations")
             .unwrap()
             .as_sequence()
             .unwrap()
@@ -345,14 +345,14 @@ fn ready_signal_cpu_pct_bounded() {
         "./examples/ready-signal-cpu.json",
         |map: &serde_yaml::Mapping| {
             let iter = map
-                .get(&"iterations".into())
+                .get("iterations")
                 .unwrap()
                 .as_sequence()
                 .unwrap()[0]
                 .as_mapping()
                 .unwrap();
             let cpu_pct = iter
-                .get(&"cpu.pct.wall.time".into())
+                .get("cpu.pct.wall.time")
                 .unwrap()
                 .as_f64()
                 .unwrap();

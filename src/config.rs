@@ -3,8 +3,7 @@
 //
 // This product includes software developed at Datadog (https://www.datadoghq.com/). Copyright 2021 Datadog, Inc.
 
-use anyhow::*;
-use lazy_static::lazy_static;
+use anyhow::{anyhow, bail, ensure, Result};
 use serde::{Deserialize, Serialize};
 use serde_yaml::{from_str, to_string, Mapping, Value};
 use std::fmt;
@@ -31,19 +30,15 @@ impl fmt::Display for Config {
     }
 }
 
-fn get_shell_command(obj: &Mapping, name: &Value) -> Result<Vec<String>> {
+fn get_shell_command(obj: &Mapping, name: &str) -> Result<Vec<String>> {
     let run = obj
         .get(name)
         .unwrap()
         .as_str()
-        .ok_or_else(|| anyhow!("'{}' must be a string", name.as_str().unwrap()))?;
+        .ok_or_else(|| anyhow!("'{}' must be a string", name))?;
 
-    shlex::split(run).ok_or_else(|| {
-        anyhow!(
-            "'{}' must be a properly formed shell command",
-            name.as_str().unwrap()
-        )
-    })
+    shlex::split(run)
+        .ok_or_else(|| anyhow!("'{}' must be a properly formed shell command", name))
 }
 
 fn get_env(env: &mut HashMap<String, String>, config_env: &Value) -> Result<()> {
@@ -62,17 +57,6 @@ fn get_env(env: &mut HashMap<String, String>, config_env: &Value) -> Result<()> 
     Ok(())
 }
 
-lazy_static! {
-    static ref NAME_KEY: Value = "name".into();
-    static ref RUN_KEY: Value = "run".into();
-    static ref SERVICE_KEY: Value = "service".into();
-    static ref SETUP_KEY: Value = "setup".into();
-    static ref TEARDOWN_KEY: Value = "teardown".into();
-    static ref TIMEOUT_KEY: Value = "timeout".into();
-    static ref ITERATIONS_KEY: Value = "iterations".into();
-    static ref INSTRUCTIONS_KEY: Value = "instructions".into();
-}
-
 fn apply_config(config: &mut Config, config_val: &Value) -> Result<()> {
     let config_val = config_val
         .as_mapping()
@@ -80,7 +64,7 @@ fn apply_config(config: &mut Config, config_val: &Value) -> Result<()> {
 
     if let Ok(name) = env::var("SIRUN_NAME") {
         config.name = Some(name)
-    } else if let Some(name_val) = config_val.get(&NAME_KEY) {
+    } else if let Some(name_val) = config_val.get("name") {
         config.name = Some(
             name_val
                 .as_str()
@@ -89,23 +73,23 @@ fn apply_config(config: &mut Config, config_val: &Value) -> Result<()> {
         );
     }
 
-    if config_val.contains_key(&SERVICE_KEY) {
-        config.service = Some(get_shell_command(config_val, &SERVICE_KEY)?);
+    if config_val.contains_key("service") {
+        config.service = Some(get_shell_command(config_val, "service")?);
     }
 
-    if config_val.contains_key(&RUN_KEY) {
-        config.run = get_shell_command(config_val, &RUN_KEY)?;
+    if config_val.contains_key("run") {
+        config.run = get_shell_command(config_val, "run")?;
     }
 
-    if config_val.contains_key(&SETUP_KEY) {
-        config.setup = Some(get_shell_command(config_val, &SETUP_KEY)?);
+    if config_val.contains_key("setup") {
+        config.setup = Some(get_shell_command(config_val, "setup")?);
     }
 
-    if config_val.contains_key(&TEARDOWN_KEY) {
-        config.teardown = Some(get_shell_command(config_val, &TEARDOWN_KEY)?);
+    if config_val.contains_key("teardown") {
+        config.teardown = Some(get_shell_command(config_val, "teardown")?);
     }
 
-    if let Some(timeout_val) = config_val.get(&TIMEOUT_KEY) {
+    if let Some(timeout_val) = config_val.get("timeout") {
         config.timeout = Some(
             timeout_val
                 .as_u64()
@@ -113,21 +97,21 @@ fn apply_config(config: &mut Config, config_val: &Value) -> Result<()> {
         );
     }
 
-    if let Some(iterations_val) = config_val.get(&ITERATIONS_KEY) {
+    if let Some(iterations_val) = config_val.get("iterations") {
         config.iterations = iterations_val
             .as_u64()
             .ok_or_else(|| anyhow!("iterations must be an integer >=1"))?;
         ensure!(config.iterations > 0, "iterations must be an integer >=1");
     }
 
-    if let Some(instructions_val) = config_val.get(&INSTRUCTIONS_KEY) {
+    if let Some(instructions_val) = config_val.get("instructions") {
         config.instructions = instructions_val
             .as_bool()
             .ok_or_else(|| anyhow!("'instructions' must be a boolean"))?;
     }
 
-    if let Some(env) = config_val.get(&"env".to_owned().into()) {
-        get_env(&mut config.env, &env)?;
+    if let Some(env) = config_val.get("env") {
+        get_env(&mut config.env, env)?;
     }
     Ok(())
 }
@@ -183,7 +167,7 @@ pub(crate) fn get_config(filename: &str) -> Result<Config> {
             );
             &variants[id]
         } else if let Some(variants) = variants.as_mapping() {
-            match variants.get(&variant_key.clone().into()) {
+            match variants.get(variant_key.as_str()) {
                 Some(val) => val,
                 None => bail!("variant key {} does not exist in object", variant_key),
             }
