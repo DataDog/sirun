@@ -1,7 +1,7 @@
 use anyhow::{bail, Result};
-use async_std::{
-    process::{Command, Child, Stdio},
-    task::sleep,
+use smol::{
+    process::{Child, Command, Stdio},
+    Timer,
 };
 use std::{collections::HashMap, env, os::unix::{io::RawFd, process::ExitStatusExt}, time::Duration};
 
@@ -33,7 +33,7 @@ async fn run_setup_or_teardown(typ: &str, config: &Config) -> Result<()> {
         if let Some(maybe_code) = maybe_code {
             code = maybe_code;
             if code != 0 {
-                sleep(Duration::from_secs(1)).await;
+                Timer::after(Duration::from_secs(1)).await;
                 attempts += 1;
             }
         } else {

@@ -4,11 +4,11 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/). Copyright 2021 Datadog, Inc.
 
 use anyhow::Result;
-use async_std::{
+use smol::{
+    lock::{Barrier, RwLock},
     net::UdpSocket,
-    process::{Command, Stdio, Child, ExitStatus},
-    sync::{Arc, Barrier, RwLock},
-    task::{sleep, spawn},
+    process::{Child, Command, ExitStatus, Stdio},
+    Timer,
 };
 use serde_json::json;
 use std::{
@@ -16,6 +16,7 @@ use std::{
     env,
     os::unix::{io::{AsRawFd, FromRawFd, IntoRawFd, RawFd}, process::ExitStatusExt},
     process::exit,
+    sync::Arc,
 };
 use indexmap::IndexMap;
 
@@ -47,15 +48,19 @@ fn get_kernel_metrics(wall_time: f64, data: Rusage, metrics: &mut HashMap<String
 }
 
 async fn test_timeout(timeout: u64) {
-    sleep(std::time::Duration::from_secs(timeout)).await;
+    Timer::after(std::time::Duration::from_secs(timeout)).await;
     eprintln!("Timeout of {} seconds exceeded.", timeout);
     exit(1);
 }
 
 async fn read_one_byte(fd: RawFd) -> bool {
-    use async_std::io::ReadExt;
+    use smol::io::AsyncReadExt;
     let mut buf = [0u8; 1];
-    let mut f = unsafe { async_std::fs::File::from_raw_fd(fd) };
+    let file = unsafe { std::fs::File::from_raw_fd(fd) };
+    let mut f = match smol::Async::new(file) {
+        Ok(f) => f,
+        Err(_) => return false,
+    };
     f.read(&mut buf).await.map(|n| n > 0).unwrap_or(false)
 }
 
@@ -132,7 +137,7 @@ async fn run_with_instruction_count(
 
 async fn run_test(config: &Config, mut metrics: &mut HashMap<String, MetricValue>) -> Result<()> {
     if let Some(timeout) = config.timeout {
-        spawn(test_timeout(timeout));
+        smol::spawn(test_timeout(timeout)).detach();
     }
 
     let (read_fd, write_fd) = nix::unistd::pipe()?;
@@ -263,7 +268,7 @@ async fn main_main() -> Result<()> {
     let statsd_started = Arc::new(Barrier::new(2));
     let statsd_buf = Arc::new(RwLock::new(String::new()));
 
-    spawn(statsd_listener(statsd_started.clone(), statsd_buf.clone()));
+    smol::spawn(statsd_listener(statsd_started.clone(), statsd_buf.clone())).detach();
     statsd_started.wait().await; // waits for socket to be listening
 
     let mut iterations = Vec::new();
@@ -312,11 +317,12 @@ async fn iteration_main() -> Result<()> {
     Ok(())
 }
 
-#[async_std::main]
-async fn main() -> Result<()> {
-    if env::var("SIRUN_ITERATION").is_ok() {
-        iteration_main().await
-    } else {
-        main_main().await
-    }
+fn main() -> Result<()> {
+    smol::block_on(async {
+        if env::var("SIRUN_ITERATION").is_ok() {
+            iteration_main().await
+        } else {
+            main_main().await
+        }
+    })
 }

@@ -11,7 +11,6 @@ readme = "README.md"
 lto = true
 
 [dependencies]
-async-std = { version = "1.9.0", features = ["unstable", "attributes"] }
 serde_json = { version = "1.0.64", features = ["preserve_order"] }
 shlex = "2.0.1"
 nix = { version = "0.31.3", features = ["fs"] }
@@ -22,6 +21,7 @@ serde_yaml = { package = "yaml_serde", version = "0.10" }
 serde = { version = "1.0.228", features = ["derive"] }
 anyhow = "1.0.102"
 indexmap = { version = "2.14.0", features = ["serde"] }
+smol = "2.0.2"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 perfcnt = "0.8.0"
