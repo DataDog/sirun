@@ -3,7 +3,7 @@
 //
 // This product includes software developed at Datadog (https://www.datadoghq.com/). Copyright 2021 Datadog, Inc.
 
-use anyhow::*;
+use anyhow::Result;
 use async_std::{
     net::UdpSocket,
     process::{Command, Stdio, Child, ExitStatus},
@@ -14,10 +14,9 @@ use serde_json::json;
 use std::{
     collections::HashMap,
     env,
-    os::unix::{io::{FromRawFd, RawFd}, process::ExitStatusExt},
+    os::unix::{io::{AsRawFd, FromRawFd, IntoRawFd, RawFd}, process::ExitStatusExt},
     process::exit,
 };
-use which::which;
 use indexmap::IndexMap;
 
 mod config;
@@ -139,16 +138,17 @@ async fn run_test(config: &Config, mut metrics: &mut HashMap<String, MetricValue
     let (read_fd, write_fd) = nix::unistd::pipe()?;
     // Set CLOEXEC on read_fd so the child does not inherit the read end.
     nix::fcntl::fcntl(
-        read_fd,
+        &read_fd,
         nix::fcntl::FcntlArg::F_SETFD(nix::fcntl::FdFlag::FD_CLOEXEC),
     )?;
+    let read_fd = read_fd.into_raw_fd();
 
     let mut start_time = std::time::Instant::now();
     // RUSAGE_CHILDREN cannot be snapshotted mid-run (it only updates after a child
     // exits), so we use read_child_cpu_us to snapshot the live process CPU at
     // signal time and subtract it from the final RUSAGE_CHILDREN delta.
     let rusage_start = Rusage::new();
-    let mut child = run_cmd(&config.run, &config.env, Some(write_fd))?;
+    let mut child = run_cmd(&config.run, &config.env, Some(write_fd.as_raw_fd()))?;
     // Close parent's write end so the child's exit causes EOF on the read end.
     nix::unistd::close(write_fd)?;
 
