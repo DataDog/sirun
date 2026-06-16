@@ -4,8 +4,8 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/). Copyright 2021 Datadog, Inc.
 
 use anyhow::Result;
-use async_std::io;
 use indexmap::IndexMap;
+use smol::io::{AsyncBufReadExt, BufReader};
 
 use crate::metric_value::*;
 
@@ -64,7 +64,7 @@ fn summary(iterations: &[MetricValue]) -> MetricValue {
 }
 
 pub(crate) async fn summarize() -> Result<()> {
-    let stdin = io::stdin();
+    let mut stdin = BufReader::new(smol::Unblock::new(std::io::stdin()));
     let mut line = String::new();
     let mut result_data: MetricMap = IndexMap::new();
     while stdin.read_line(&mut line).await? != 0 {

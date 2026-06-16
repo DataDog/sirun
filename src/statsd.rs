@@ -1,10 +1,10 @@
 use crate::metric_value::*;
 use anyhow::Result;
-use async_std::{
+use smol::{
+    lock::{Barrier, RwLock},
     net::UdpSocket,
-    sync::{Arc, Barrier, RwLock},
 };
-use std::env;
+use std::{env, sync::Arc};
 use indexmap::IndexMap;
 
 pub(crate) async fn statsd_listener(
