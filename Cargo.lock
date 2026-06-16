@@ -907,7 +907,7 @@ checksum = "38b58827f4464d87d377d175e90bf58eb00fd8716ff0a62f80356b5e61555d0d"
 
 [[package]]
 name = "sirun"
-version = "0.1.12"
+version = "0.1.13"
 dependencies = [
  "anyhow",
  "assert_cmd",
