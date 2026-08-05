@@ -53,6 +53,15 @@ async fn test_timeout(timeout: u64) {
     exit(1);
 }
 
+fn report_iteration_failure(iteration: u64, total: u64) {
+    eprintln!(
+        "Sirun iteration {}/{} failed; completed iterations: {}.",
+        iteration,
+        total,
+        iteration - 1
+    );
+}
+
 async fn read_one_byte(fd: RawFd) -> bool {
     use smol::io::AsyncReadExt;
     let mut buf = [0u8; 1];
@@ -206,6 +215,7 @@ fn run_service(config: &Config) -> Result<Option<Child>> {
 async fn run_iteration(
     config: &Config,
     statsd_buf: Arc<RwLock<String>>,
+    iteration: u64,
 ) -> Result<IndexMap<String, MetricValue>> {
     let mut sub_config: Config = config.clone();
     let json_config = serde_yaml::to_string(&config)?;
@@ -218,9 +228,9 @@ async fn run_iteration(
         None,
     )?;
     let status = child.status().await?;
-    let status = status.code().expect("no exit code");
-    if status != 0 && status <= 128 {
-        exit(status);
+    if !status.success() {
+        report_iteration_failure(iteration, config.iterations);
+        exit(status.code().unwrap_or(1));
     }
     let metrics = get_statsd_metrics(statsd_buf).await?;
 
@@ -272,10 +282,15 @@ async fn main_main() -> Result<()> {
     statsd_started.wait().await; // waits for socket to be listening
 
     let mut iterations = Vec::new();
-    for _ in 0..config.iterations {
-        iterations.push(MetricValue::Map(
-            run_iteration(&config, statsd_buf.clone()).await?,
-        ));
+    for iteration in 1..=config.iterations {
+        let metrics = match run_iteration(&config, statsd_buf.clone(), iteration).await {
+            Ok(metrics) => metrics,
+            Err(error) => {
+                report_iteration_failure(iteration, config.iterations);
+                return Err(error);
+            }
+        };
+        iterations.push(MetricValue::Map(metrics));
     }
     metrics.insert("iterations".into(), MetricValue::Arr(iterations));
 

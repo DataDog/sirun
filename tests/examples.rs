@@ -205,6 +205,40 @@ fn iterations_nohup() {
 
 #[test]
 #[serial]
+fn failed_iteration_reports_progress() {
+    let mut counter_path = std::env::temp_dir();
+    counter_path.push(format!("sirun-failed-iteration-{}", std::process::id()));
+    if let Err(error) = std::fs::remove_file(&counter_path) {
+        assert_eq!(error.kind(), std::io::ErrorKind::NotFound);
+    }
+
+    run!("tests/fixtures/fails-on-third-iteration.json")
+        .env("SIRUN_FAILURE_COUNTER", &counter_path)
+        .env("SIRUN_NO_STDIO", "1")
+        .assert()
+        .code(42)
+        .stdout(predicate::str::is_empty())
+        .stderr(predicate::str::contains(
+            "Sirun iteration 3/5 failed; completed iterations: 2.\n",
+        ));
+
+    std::fs::remove_file(counter_path).unwrap();
+}
+
+#[test]
+#[serial]
+fn iteration_error_reports_progress() {
+    run!("tests/fixtures/fails-to-start-service.json")
+        .assert()
+        .failure()
+        .stdout(predicate::str::is_empty())
+        .stderr(predicate::str::contains(
+            "Sirun iteration 1/5 failed; completed iterations: 0.\n",
+        ));
+}
+
+#[test]
+#[serial]
 fn iterations_not_cumulative() {
     json_has!("./examples/iterations.json", |map: &serde_yaml::Mapping| {
         let iter = map

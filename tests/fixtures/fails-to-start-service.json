@@ -1,0 +1,5 @@
+{
+  "service": "sirun-test-command-that-does-not-exist",
+  "run": "true",
+  "iterations": 5
+}

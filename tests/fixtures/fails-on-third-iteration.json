@@ -1,0 +1,5 @@
+{
+  "setup": "bash -c 'count=$(cat \"$SIRUN_FAILURE_COUNTER\" 2>/dev/null || echo 0); echo $((count + 1)) > \"$SIRUN_FAILURE_COUNTER\"'",
+  "run": "bash -c 'test \"$(cat \"$SIRUN_FAILURE_COUNTER\")\" -ne 3 || exit 42'",
+  "iterations": 5
+}
