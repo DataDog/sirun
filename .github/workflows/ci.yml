@@ -18,10 +18,11 @@ jobs:
     runs-on: ${{ matrix.os }}
 
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v6
       - name: Install valgrind
         run: |
           if [ "$RUNNER_OS" == "Linux" ]; then
+            sudo apt-get update
             sudo apt-get install valgrind
           fi
       - name: Tests
