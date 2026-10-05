@@ -38,20 +38,12 @@ fn simple_json() {
 #[serial]
 fn wall_and_cpu_pct() {
     json_has!("examples/simple.json", move |map: &serde_yaml::Mapping| {
-        let map = map
-            .get("iterations")
-            .unwrap()
-            .as_sequence()
-            .unwrap();
+        let map = map.get("iterations").unwrap().as_sequence().unwrap();
         let map = map.get(0).unwrap().as_mapping().unwrap();
         let wall_time = map.get("wall.time").unwrap().as_f64().unwrap();
         let stime = map.get("system.time").unwrap().as_f64().unwrap();
         let utime = map.get("user.time").unwrap().as_f64().unwrap();
-        let pct = map
-            .get("cpu.pct.wall.time")
-            .unwrap()
-            .as_f64()
-            .unwrap();
+        let pct = map.get("cpu.pct.wall.time").unwrap().as_f64().unwrap();
         (pct - ((stime + utime) * 100.0 / wall_time)).abs() < f64::EPSILON
     });
 }
@@ -188,12 +180,7 @@ fn iterations() {
             "you should see this\nyou should see this\nyou should see this",
         ));
     json_has!("./examples/iterations.json", |map: &serde_yaml::Mapping| {
-        map.get("iterations")
-            .unwrap()
-            .as_sequence()
-            .unwrap()
-            .len()
-            == 20
+        map.get("iterations").unwrap().as_sequence().unwrap().len() == 20
     });
 }
 
@@ -205,14 +192,43 @@ fn iterations_nohup() {
 
 #[test]
 #[serial]
+fn failed_iteration_reports_progress() {
+    let mut counter_path = std::env::temp_dir();
+    counter_path.push(format!("sirun-failed-iteration-{}", std::process::id()));
+    if let Err(error) = std::fs::remove_file(&counter_path) {
+        assert_eq!(error.kind(), std::io::ErrorKind::NotFound);
+    }
+
+    run!("tests/fixtures/fails-on-third-iteration.json")
+        .env("SIRUN_FAILURE_COUNTER", &counter_path)
+        .env("SIRUN_NO_STDIO", "1")
+        .assert()
+        .code(42)
+        .stdout(predicate::str::is_empty())
+        .stderr(predicate::str::contains(
+            "Sirun iteration 3/5 failed; completed iterations: 2.\n",
+        ));
+
+    std::fs::remove_file(counter_path).unwrap();
+}
+
+#[test]
+#[serial]
+fn iteration_error_reports_progress() {
+    run!("tests/fixtures/fails-to-start-service.json")
+        .assert()
+        .failure()
+        .stdout(predicate::str::is_empty())
+        .stderr(predicate::str::contains(
+            "Sirun iteration 1/5 failed; completed iterations: 0.\n",
+        ));
+}
+
+#[test]
+#[serial]
 fn iterations_not_cumulative() {
     json_has!("./examples/iterations.json", |map: &serde_yaml::Mapping| {
-        let iter = map
-            .get("iterations")
-            .unwrap()
-            .as_sequence()
-            .unwrap()
-            .iter();
+        let iter = map.get("iterations").unwrap().as_sequence().unwrap().iter();
         let mut prev = 0.0;
         for iteration in iter {
             let val = iteration
@@ -281,14 +297,20 @@ fn assigned_port() {
 #[serial]
 #[cfg(target_os = "linux")]
 fn insctrution_counts() {
-    if caps::has_cap(None, caps::CapSet::Permitted, caps::Capability::CAP_SYS_PTRACE).unwrap() {
-        json_has!("./examples/instructions.json", move |map: &serde_yaml::Mapping| {
-            let count = map.get("instructions")
-                .unwrap()
-                .as_f64()
-                .unwrap();
-            count > 0.0
-        });
+    if caps::has_cap(
+        None,
+        caps::CapSet::Permitted,
+        caps::Capability::CAP_SYS_PTRACE,
+    )
+    .unwrap()
+    {
+        json_has!(
+            "./examples/instructions.json",
+            move |map: &serde_yaml::Mapping| {
+                let count = map.get("instructions").unwrap().as_f64().unwrap();
+                count > 0.0
+            }
+        );
     }
 }
 
@@ -304,11 +326,7 @@ fn ready_signal_resets_wall_time() {
     json_has!(
         "./examples/ready-signal.json",
         |map: &serde_yaml::Mapping| {
-            let wall_time = map
-                .get("iterations")
-                .unwrap()
-                .as_sequence()
-                .unwrap()[0]
+            let wall_time = map.get("iterations").unwrap().as_sequence().unwrap()[0]
                 .as_mapping()
                 .unwrap()
                 .get("wall.time")
@@ -329,12 +347,7 @@ fn ready_signal_fallback_when_no_signal() {
     // App exits without writing to SIRUN_READY_FD — full timing used.
     json_has!("./examples/simple.json", |map: &serde_yaml::Mapping| {
         // simple.json has no ready signal; we just verify it still runs normally.
-        map.get("iterations")
-            .unwrap()
-            .as_sequence()
-            .unwrap()
-            .len()
-            == 1
+        map.get("iterations").unwrap().as_sequence().unwrap().len() == 1
     });
 }
 
@@ -344,18 +357,10 @@ fn ready_signal_cpu_pct_bounded() {
     json_has!(
         "./examples/ready-signal-cpu.json",
         |map: &serde_yaml::Mapping| {
-            let iter = map
-                .get("iterations")
-                .unwrap()
-                .as_sequence()
-                .unwrap()[0]
+            let iter = map.get("iterations").unwrap().as_sequence().unwrap()[0]
                 .as_mapping()
                 .unwrap();
-            let cpu_pct = iter
-                .get("cpu.pct.wall.time")
-                .unwrap()
-                .as_f64()
-                .unwrap();
+            let cpu_pct = iter.get("cpu.pct.wall.time").unwrap().as_f64().unwrap();
             // Without the fix, user.time covers the full CPU-intensive startup
             // while wall.time covers only the post-ready period (near zero),
             // making cpu.pct.wall.time >> 100%. With the fix it must stay <= 100%.

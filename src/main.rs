@@ -4,21 +4,24 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/). Copyright 2021 Datadog, Inc.
 
 use anyhow::Result;
+use indexmap::IndexMap;
+use serde_json::json;
 use smol::{
     lock::{Barrier, RwLock},
     net::UdpSocket,
     process::{Child, Command, ExitStatus, Stdio},
     Timer,
 };
-use serde_json::json;
 use std::{
     collections::HashMap,
     env,
-    os::unix::{io::{AsRawFd, FromRawFd, IntoRawFd, RawFd}, process::ExitStatusExt},
+    os::unix::{
+        io::{AsRawFd, FromRawFd, IntoRawFd, RawFd},
+        process::ExitStatusExt,
+    },
     process::exit,
     sync::Arc,
 };
-use indexmap::IndexMap;
 
 mod config;
 use config::*;
@@ -51,6 +54,15 @@ async fn test_timeout(timeout: u64) {
     Timer::after(std::time::Duration::from_secs(timeout)).await;
     eprintln!("Timeout of {} seconds exceeded.", timeout);
     exit(1);
+}
+
+fn report_iteration_failure(iteration: u64, total: u64) {
+    eprintln!(
+        "Sirun iteration {}/{} failed; completed iterations: {}.",
+        iteration,
+        total,
+        iteration - 1
+    );
 }
 
 async fn read_one_byte(fd: RawFd) -> bool {
@@ -89,20 +101,18 @@ async fn run_with_instruction_count(
     read_fd: RawFd,
     start_time: &mut std::time::Instant,
 ) -> Result<(ExitStatus, Option<u64>, Option<(f64, f64)>)> {
-    use perfcnt::AbstractPerfCounter;
     use perfcnt::linux::{HardwareEventType, PerfCounterBuilderLinux};
+    use perfcnt::AbstractPerfCounter;
 
     if !config.instructions {
-        let (status, startup_cpu) =
-            wait_with_ready_signal(child, read_fd, start_time).await?;
+        let (status, startup_cpu) = wait_with_ready_signal(child, read_fd, start_time).await?;
         return Ok((status, None, startup_cpu));
     }
 
     let pid = child.id();
-    let mut counter =
-        PerfCounterBuilderLinux::from_hardware_event(HardwareEventType::Instructions)
-            .for_pid(pid as i32)
-            .finish()?;
+    let mut counter = PerfCounterBuilderLinux::from_hardware_event(HardwareEventType::Instructions)
+        .for_pid(pid as i32)
+        .finish()?;
     counter.start()?;
 
     let got_signal = read_one_byte(read_fd).await;
@@ -130,8 +140,7 @@ async fn run_with_instruction_count(
     read_fd: RawFd,
     start_time: &mut std::time::Instant,
 ) -> Result<(ExitStatus, Option<u64>, Option<(f64, f64)>)> {
-    let (status, startup_cpu) =
-        wait_with_ready_signal(child, read_fd, start_time).await?;
+    let (status, startup_cpu) = wait_with_ready_signal(child, read_fd, start_time).await?;
     Ok((status, None, startup_cpu))
 }
 
@@ -157,13 +166,8 @@ async fn run_test(config: &Config, mut metrics: &mut HashMap<String, MetricValue
     // Close parent's write end so the child's exit causes EOF on the read end.
     nix::unistd::close(write_fd)?;
 
-    let (status, instructions, startup_cpu) = run_with_instruction_count(
-        &mut child,
-        config,
-        read_fd,
-        &mut start_time,
-    )
-    .await?;
+    let (status, instructions, startup_cpu) =
+        run_with_instruction_count(&mut child, config, read_fd, &mut start_time).await?;
 
     let duration = start_time.elapsed().as_micros();
     metrics.insert("wall.time".to_owned(), (duration as f64).into());
@@ -206,6 +210,7 @@ fn run_service(config: &Config) -> Result<Option<Child>> {
 async fn run_iteration(
     config: &Config,
     statsd_buf: Arc<RwLock<String>>,
+    iteration: u64,
 ) -> Result<IndexMap<String, MetricValue>> {
     let mut sub_config: Config = config.clone();
     let json_config = serde_yaml::to_string(&config)?;
@@ -218,9 +223,9 @@ async fn run_iteration(
         None,
     )?;
     let status = child.status().await?;
-    let status = status.code().expect("no exit code");
-    if status != 0 && status <= 128 {
-        exit(status);
+    if !status.success() {
+        report_iteration_failure(iteration, config.iterations);
+        exit(status.code().unwrap_or(1));
     }
     let metrics = get_statsd_metrics(statsd_buf).await?;
 
@@ -272,10 +277,15 @@ async fn main_main() -> Result<()> {
     statsd_started.wait().await; // waits for socket to be listening
 
     let mut iterations = Vec::new();
-    for _ in 0..config.iterations {
-        iterations.push(MetricValue::Map(
-            run_iteration(&config, statsd_buf.clone()).await?,
-        ));
+    for iteration in 1..=config.iterations {
+        let metrics = match run_iteration(&config, statsd_buf.clone(), iteration).await {
+            Ok(metrics) => metrics,
+            Err(error) => {
+                report_iteration_failure(iteration, config.iterations);
+                return Err(error);
+            }
+        };
+        iterations.push(MetricValue::Map(metrics));
     }
     metrics.insert("iterations".into(), MetricValue::Arr(iterations));
 
@@ -312,7 +322,11 @@ async fn iteration_main() -> Result<()> {
     let statsd_addr = format!("127.0.0.1:{}", env::var("SIRUN_STATSD_PORT")?);
     sock.send_to(buf.as_bytes(), &statsd_addr).await?;
     if let Some(instructions) = metrics.remove("instructions") {
-        sock.send_to(format!("instructions:{}|g\n", instructions.as_f64()).as_bytes(), &statsd_addr).await?;
+        sock.send_to(
+            format!("instructions:{}|g\n", instructions.as_f64()).as_bytes(),
+            &statsd_addr,
+        )
+        .await?;
     }
     Ok(())
 }

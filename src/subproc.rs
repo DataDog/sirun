@@ -3,7 +3,12 @@ use smol::{
     process::{Child, Command, Stdio},
     Timer,
 };
-use std::{collections::HashMap, env, os::unix::{io::RawFd, process::ExitStatusExt}, time::Duration};
+use std::{
+    collections::HashMap,
+    env,
+    os::unix::{io::RawFd, process::ExitStatusExt},
+    time::Duration,
+};
 
 use crate::config::*;
 

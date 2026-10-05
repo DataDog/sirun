@@ -80,7 +80,7 @@ pub(crate) fn read_child_cpu_us(pid: u32) -> Option<(f64, f64)> {
     struct ProcTaskInfo {
         pti_virtual_size: u64,
         pti_resident_size: u64,
-        pti_total_user: u64,   // nanoseconds — XNU bsd/kern/proc_info.c fill_taskprocinfo()
+        pti_total_user: u64, // nanoseconds — XNU bsd/kern/proc_info.c fill_taskprocinfo()
         pti_total_system: u64, // nanoseconds — XNU bsd/kern/proc_info.c fill_taskprocinfo()
         pti_threads_user: u64,
         pti_threads_system: u64,
