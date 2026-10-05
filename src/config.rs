@@ -37,8 +37,7 @@ fn get_shell_command(obj: &Mapping, name: &str) -> Result<Vec<String>> {
         .as_str()
         .ok_or_else(|| anyhow!("'{}' must be a string", name))?;
 
-    shlex::split(run)
-        .ok_or_else(|| anyhow!("'{}' must be a properly formed shell command", name))
+    shlex::split(run).ok_or_else(|| anyhow!("'{}' must be a properly formed shell command", name))
 }
 
 fn get_env(env: &mut HashMap<String, String>, config_env: &Value) -> Result<()> {

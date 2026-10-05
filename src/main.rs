@@ -4,21 +4,24 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/). Copyright 2021 Datadog, Inc.
 
 use anyhow::Result;
+use indexmap::IndexMap;
+use serde_json::json;
 use smol::{
     lock::{Barrier, RwLock},
     net::UdpSocket,
     process::{Child, Command, ExitStatus, Stdio},
     Timer,
 };
-use serde_json::json;
 use std::{
     collections::HashMap,
     env,
-    os::unix::{io::{AsRawFd, FromRawFd, IntoRawFd, RawFd}, process::ExitStatusExt},
+    os::unix::{
+        io::{AsRawFd, FromRawFd, IntoRawFd, RawFd},
+        process::ExitStatusExt,
+    },
     process::exit,
     sync::Arc,
 };
-use indexmap::IndexMap;
 
 mod config;
 use config::*;
@@ -98,20 +101,18 @@ async fn run_with_instruction_count(
     read_fd: RawFd,
     start_time: &mut std::time::Instant,
 ) -> Result<(ExitStatus, Option<u64>, Option<(f64, f64)>)> {
-    use perfcnt::AbstractPerfCounter;
     use perfcnt::linux::{HardwareEventType, PerfCounterBuilderLinux};
+    use perfcnt::AbstractPerfCounter;
 
     if !config.instructions {
-        let (status, startup_cpu) =
-            wait_with_ready_signal(child, read_fd, start_time).await?;
+        let (status, startup_cpu) = wait_with_ready_signal(child, read_fd, start_time).await?;
         return Ok((status, None, startup_cpu));
     }
 
     let pid = child.id();
-    let mut counter =
-        PerfCounterBuilderLinux::from_hardware_event(HardwareEventType::Instructions)
-            .for_pid(pid as i32)
-            .finish()?;
+    let mut counter = PerfCounterBuilderLinux::from_hardware_event(HardwareEventType::Instructions)
+        .for_pid(pid as i32)
+        .finish()?;
     counter.start()?;
 
     let got_signal = read_one_byte(read_fd).await;
@@ -139,8 +140,7 @@ async fn run_with_instruction_count(
     read_fd: RawFd,
     start_time: &mut std::time::Instant,
 ) -> Result<(ExitStatus, Option<u64>, Option<(f64, f64)>)> {
-    let (status, startup_cpu) =
-        wait_with_ready_signal(child, read_fd, start_time).await?;
+    let (status, startup_cpu) = wait_with_ready_signal(child, read_fd, start_time).await?;
     Ok((status, None, startup_cpu))
 }
 
@@ -166,13 +166,8 @@ async fn run_test(config: &Config, mut metrics: &mut HashMap<String, MetricValue
     // Close parent's write end so the child's exit causes EOF on the read end.
     nix::unistd::close(write_fd)?;
 
-    let (status, instructions, startup_cpu) = run_with_instruction_count(
-        &mut child,
-        config,
-        read_fd,
-        &mut start_time,
-    )
-    .await?;
+    let (status, instructions, startup_cpu) =
+        run_with_instruction_count(&mut child, config, read_fd, &mut start_time).await?;
 
     let duration = start_time.elapsed().as_micros();
     metrics.insert("wall.time".to_owned(), (duration as f64).into());
@@ -327,7 +322,11 @@ async fn iteration_main() -> Result<()> {
     let statsd_addr = format!("127.0.0.1:{}", env::var("SIRUN_STATSD_PORT")?);
     sock.send_to(buf.as_bytes(), &statsd_addr).await?;
     if let Some(instructions) = metrics.remove("instructions") {
-        sock.send_to(format!("instructions:{}|g\n", instructions.as_f64()).as_bytes(), &statsd_addr).await?;
+        sock.send_to(
+            format!("instructions:{}|g\n", instructions.as_f64()).as_bytes(),
+            &statsd_addr,
+        )
+        .await?;
     }
     Ok(())
 }
